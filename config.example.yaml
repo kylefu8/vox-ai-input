@@ -1,0 +1,39 @@
+# AI-Input 配置模板
+# 复制此文件为 config.yaml，填入你的 Azure API 信息
+
+azure:
+    # Azure OpenAI 服务端点（不含 /openai/... 后缀）
+    endpoint: "https://your-resource.openai.azure.com/"
+    # Azure OpenAI API Key
+    api_key: "your-api-key-here"
+    # API 版本
+    api_version: "2024-06-01"
+
+    # Whisper 模型部署名称
+    whisper_deployment: "whisper"
+
+    # GPT 模型部署名称（用于文字润色）
+    gpt_deployment: "gpt-4o-mini"
+
+# 录音设置
+recording:
+    # 采样率（Hz）
+    sample_rate: 16000
+    # 声道数（1=单声道）
+    channels: 1
+    # 最大录音时长（秒），超过自动停止
+    max_duration: 60
+
+# 热键设置
+hotkey:
+    # 长按触发录音的快捷键
+    # macOS: ctrl+shift+space
+    # Windows: ctrl+shift+space
+    combination: "ctrl+shift+space"
+
+# 润色设置
+polish:
+    # 是否启用 AI 润色（false 则直接输出 Whisper 原始文字）
+    enabled: true
+    # Whisper 语音识别语言（留空则自动检测）
+    language: "zh"

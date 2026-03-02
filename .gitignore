@@ -1,0 +1,36 @@
+# ========== 敏感文件（绝对不能提交） ==========
+config.yaml
+
+# ========== Python ==========
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ========== 虚拟环境 ==========
+.venv/
+venv/
+env/
+
+# ========== IDE ==========
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ========== 系统文件 ==========
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ========== 临时文件 ==========
+*.tmp
+*.log
+
+# ========== 音频（排除临时录音，但保留 assets 下的提示音） ==========
+*.wav
+!assets/sounds/*.wav
