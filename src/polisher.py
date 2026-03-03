@@ -3,10 +3,12 @@
 
 调用 Azure OpenAI 的 GPT-4o-mini，对语音转写的文字进行最小化润色：
 补标点、纠错别字、去口语填充词，但不改变原意。
+实现了 PolisherProtocol 接口，可被其他润色实现替换。
 """
 
-from openai import AzureOpenAI
+from openai import APITimeoutError, APIConnectionError
 
+from src.azure_client import get_azure_client
 from src.logger import setup_logger
 
 log = setup_logger(__name__)
@@ -24,8 +26,9 @@ POLISH_SYSTEM_PROMPT = """你是一个语音输入后处理助手。对语音转
 
 class Polisher:
     """
-    文字润色处理器。
+    Azure GPT 文字润色处理器。
 
+    实现 PolisherProtocol 接口。
     使用 Azure OpenAI 的 GPT-4o-mini 对语音转写文字进行润色。
     """
 
@@ -41,11 +44,13 @@ class Polisher:
         """
         self.deployment = deployment
 
-        # 创建 Azure OpenAI 客户端
-        self.client = AzureOpenAI(
-            azure_endpoint=endpoint,
+        # 获取共享的 Azure OpenAI 客户端（超时 30 秒，文字润色响应较快）
+        self.client = get_azure_client(
+            endpoint=endpoint,
             api_key=api_key,
             api_version=api_version,
+            timeout=30.0,
+            max_retries=2,
         )
 
         log.info("GPT 润色器初始化完成（部署: %s）", deployment)
@@ -93,6 +98,12 @@ class Polisher:
 
             return polished
 
+        except APITimeoutError:
+            log.error("GPT API 调用超时（30秒），返回原始文字")
+            return raw_text
+        except APIConnectionError as e:
+            log.error("无法连接到 Azure 服务: %s，返回原始文字", e)
+            return raw_text
         except Exception as e:
             log.error("GPT API 调用失败: %s", e)
             log.error("将返回原始转写文字（未润色）")

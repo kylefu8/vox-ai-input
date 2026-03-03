@@ -97,7 +97,7 @@ class HotkeyListener:
     会自动处理长按时的重复 press 事件（只触发一次 on_activate）。
     """
 
-    def __init__(self, combination_str, on_activate, on_deactivate):
+    def __init__(self, combination_str, on_activate, on_deactivate, on_cancel=None):
         """
         初始化热键监听器。
 
@@ -105,9 +105,11 @@ class HotkeyListener:
             combination_str: 快捷键字符串，如 "ctrl+shift+space"
             on_activate: 按下快捷键时的回调函数（开始录音）
             on_deactivate: 松开快捷键时的回调函数（停止录音）
+            on_cancel: 按 Esc 时的回调函数（取消录音），可选
         """
         self.on_activate = on_activate
         self.on_deactivate = on_deactivate
+        self.on_cancel = on_cancel
 
         # 解析快捷键
         self._modifiers, self._trigger = _parse_hotkey_combination(combination_str)
@@ -188,8 +190,21 @@ class HotkeyListener:
         按键按下事件处理。
 
         检查当前按下的键是否构成完整的快捷键组合。
+        按 Esc 键时，如果正在录音，则取消。
         """
         with self._lock:
+            # 检查是否按了 Esc（取消录音）
+            if key == keyboard.Key.esc and self._is_active:
+                self._is_active = False
+                self._trigger_pressed = False
+                log.info("❌ 按下 Esc — 取消录音")
+                if self.on_cancel:
+                    try:
+                        self.on_cancel()
+                    except Exception as e:
+                        log.error("on_cancel 回调出错: %s", e)
+                return
+
             # 检查是否是修饰键
             for mod in self._modifiers:
                 if self._match_key(key, mod):

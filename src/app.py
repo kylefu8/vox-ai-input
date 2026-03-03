@@ -26,6 +26,7 @@ from src.output import paste_text
 from src.polisher import Polisher
 from src.recorder import Recorder
 from src.transcriber import Transcriber
+from src.tray import TrayIcon, STATE_IDLE, STATE_RECORDING, STATE_PROCESSING
 
 log = setup_logger(__name__)
 
@@ -84,11 +85,12 @@ class AIInputApp:
         # 语言设置
         self._language = polish_cfg.get("language", "zh")
 
-        # 初始化热键监听器
+        # 初始化热键监听器（含取消回调）
         self._hotkey_listener = HotkeyListener(
             combination_str=hotkey_cfg["combination"],
             on_activate=self._on_hotkey_press,
             on_deactivate=self._on_hotkey_release,
+            on_cancel=self._on_cancel,
         )
 
         # 状态锁（防止并发问题）
@@ -97,6 +99,9 @@ class AIInputApp:
 
         # 生成默认提示音文件
         create_default_sounds()
+
+        # 初始化系统托盘图标
+        self._tray = TrayIcon(on_quit=self._shutdown)
 
         log.info("所有模块初始化完成！")
 
@@ -107,18 +112,32 @@ class AIInputApp:
         这个方法会阻塞当前线程（热键监听事件循环）。
         按 Ctrl+C 退出。
         """
+        # 启动系统托盘图标（后台线程）
+        self._tray.start()
+
         log.info("")
         log.info("🎤 AI-Input 已启动！")
         log.info("长按快捷键说话，松开后文字自动粘贴到当前应用")
-        log.info("按 Ctrl+C 退出程序")
+        log.info("录音中按 Esc 可取消当前录音")
+        log.info("按 Ctrl+C 或通过托盘菜单退出程序")
         log.info("")
 
         try:
             self._hotkey_listener.start()
         except KeyboardInterrupt:
-            log.info("")
-            log.info("程序已退出，再见！")
-            self._hotkey_listener.stop()
+            self._shutdown()
+
+    def _shutdown(self):
+        """
+        优雅地关闭所有模块。
+
+        可由 Ctrl+C 或托盘退出菜单触发。
+        """
+        log.info("")
+        log.info("程序正在退出...")
+        self._hotkey_listener.stop()
+        self._tray.stop()
+        log.info("再见！")
 
     def _on_hotkey_press(self):
         """
@@ -130,6 +149,9 @@ class AIInputApp:
         if self._is_processing:
             log.warning("上一条语音还在处理中，请稍候...")
             return
+
+        # 更新托盘状态为录音中
+        self._tray.set_state(STATE_RECORDING)
 
         # 播放开始提示音
         play_start_sound()
@@ -163,6 +185,27 @@ class AIInputApp:
         )
         thread.start()
 
+    def _on_cancel(self):
+        """
+        取消录音回调 — 按 Esc 时触发。
+
+        丢弃当前录音数据，恢复空闲状态。
+        在热键监听线程中调用。
+        """
+        if not self._recorder.is_recording:
+            return
+
+        # 停止录音但丢弃数据
+        wav_path = self._recorder.stop()
+
+        # 清理临时文件（如果产生了的话）
+        if wav_path:
+            self._transcriber.cleanup_audio(wav_path)
+
+        # 恢复空闲状态
+        self._tray.set_state(STATE_IDLE)
+        log.info("🚫 录音已取消")
+
     def _process_audio(self, wav_path):
         """
         后台处理流程：转写 → 润色 → 粘贴。
@@ -177,6 +220,9 @@ class AIInputApp:
                 log.warning("已有处理任务在运行，跳过")
                 return
             self._is_processing = True
+
+        # 更新托盘状态为处理中
+        self._tray.set_state(STATE_PROCESSING)
 
         try:
             # 1. 语音转文字
@@ -210,4 +256,7 @@ class AIInputApp:
             log.error("处理音频时出错: %s", e)
 
         finally:
-            self._is_processing = False
+            with self._processing_lock:
+                self._is_processing = False
+            # 处理完毕，恢复空闲状态
+            self._tray.set_state(STATE_IDLE)

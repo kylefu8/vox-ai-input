@@ -2,13 +2,14 @@
 语音转文字模块
 
 调用 Azure OpenAI 的 Whisper API，将 WAV 录音文件转为文字。
-使用 openai 官方 SDK 的 Azure 兼容模式。
+实现了 TranscriberProtocol 接口，可被其他转写实现替换。
 """
 
 from pathlib import Path
 
-from openai import AzureOpenAI
+from openai import APITimeoutError, APIConnectionError
 
+from src.azure_client import get_azure_client
 from src.logger import setup_logger
 
 log = setup_logger(__name__)
@@ -16,8 +17,9 @@ log = setup_logger(__name__)
 
 class Transcriber:
     """
-    语音转文字处理器。
+    Azure Whisper 语音转文字处理器。
 
+    实现 TranscriberProtocol 接口。
     使用 Azure OpenAI 的 Whisper 模型将音频文件转为文字。
     """
 
@@ -33,11 +35,13 @@ class Transcriber:
         """
         self.deployment = deployment
 
-        # 创建 Azure OpenAI 客户端
-        self.client = AzureOpenAI(
-            azure_endpoint=endpoint,
+        # 获取共享的 Azure OpenAI 客户端（超时 60 秒，适合音频上传）
+        self.client = get_azure_client(
+            endpoint=endpoint,
             api_key=api_key,
             api_version=api_version,
+            timeout=60.0,
+            max_retries=2,
         )
 
         log.info("Whisper 转写器初始化完成（部署: %s）", deployment)
@@ -87,6 +91,12 @@ class Transcriber:
             log.info("✅ 转写完成: %s", text[:80] + "..." if len(text) > 80 else text)
             return text
 
+        except APITimeoutError:
+            log.error("Whisper API 调用超时（60秒），请检查网络连接")
+            return None
+        except APIConnectionError as e:
+            log.error("无法连接到 Azure 服务: %s", e)
+            return None
         except Exception as e:
             log.error("Whisper API 调用失败: %s", e)
             log.error("请检查: 1) Azure 端点和 Key 是否正确 "
