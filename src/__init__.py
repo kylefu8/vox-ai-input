@@ -1,1 +1,1 @@
-"""VoxAI: AI 语音输入法"""
+"""Vox AI Input: AI 语音输入法"""

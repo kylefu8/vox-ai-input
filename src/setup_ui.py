@@ -13,7 +13,7 @@ _PORT = 8765
 _HTML = r"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VoxAI 配置向导</title>
+<title>Vox AI Input 配置向导</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#1a1a2e;color:#e0e0e0;min-height:100vh;display:flex;justify-content:center;padding:2rem}
@@ -47,8 +47,8 @@ h1{text-align:center;margin-bottom:.3rem;font-size:1.6rem;color:#a78bfa}
 .tip{font-size:.75rem;color:#666;margin-top:.2rem;margin-left:116px}
 </style></head><body>
 <div class="container">
-<h1>⚙️ VoxAI 配置向导</h1>
-<p class="subtitle">配置你的 AI 语音输入法</p>
+<h1>⚙️ Vox AI Input 配置向导</h1>
+<p class="subtitle">配置你的 Vox AI Input 语音输入法</p>
 
 <div class="section">
 <h2>☁️ Azure OpenAI</h2>

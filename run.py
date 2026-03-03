@@ -1,5 +1,5 @@
 """
-VoxAI 程序入口
+Vox AI Input 程序入口
 
 启动 AI 语音输入法：长按快捷键说话，松开后自动转写、润色并粘贴到当前应用。
 支持 --test 参数进入测试模式（按回车控制录音，便于调试）。
@@ -69,7 +69,7 @@ def run_test_mode():
     from src.transcriber import cleanup_audio
 
     log.info("=" * 50)
-    log.info("VoxAI 语音输入法 — 测试模式")
+    log.info("Vox AI Input 语音输入法 — 测试模式")
     log.info("=" * 50)
 
     recorder, transcriber, polisher, polish_cfg = _create_components()
@@ -130,11 +130,44 @@ def run_test_mode():
         sys.exit(0)
 
 
-def run_app():
+def _hide_console_window():
+    """
+    在 Windows 上隐藏控制台窗口。
+
+    使用 Windows API 将控制台窗口隐藏，让程序只以系统托盘图标形式运行。
+    在非 Windows 系统或没有控制台窗口时静默跳过。
+    """
+    import platform
+
+    if platform.system() != "Windows":
+        return
+
+    try:
+        import ctypes
+        # 获取当前控制台窗口句柄
+        console_window = ctypes.windll.kernel32.GetConsoleWindow()
+        if console_window:
+            # SW_HIDE = 0，隐藏窗口
+            ctypes.windll.user32.ShowWindow(console_window, 0)
+            log.debug("控制台窗口已隐藏")
+    except Exception as e:
+        log.debug("隐藏控制台窗口失败（不影响运行）: %s", e)
+
+
+def run_app(hide_console=True):
     """
     正常模式：启动 AIInputApp，长按快捷键说话。
+
+    在 Windows 上默认隐藏控制台窗口，程序通过系统托盘图标运行。
+
+    Args:
+        hide_console: 是否隐藏控制台窗口，默认 True
     """
     from src.app import AIInputApp
+
+    # 隐藏控制台窗口（Windows），程序只通过托盘图标交互
+    if hide_console:
+        _hide_console_window()
 
     try:
         app = AIInputApp()
@@ -150,11 +183,14 @@ def main():
     程序入口。
 
     用法:
-        python run.py          # 正常模式（长按快捷键说话）
-        python run.py --test   # 测试模式（按回车控制录音）
+        python run.py             # 正常模式（隐藏控制台，托盘运行）
+        python run.py --test      # 测试模式（按回车控制录音）
+        python run.py --visible   # 正常模式但保留控制台窗口（调试用）
     """
     if "--test" in sys.argv:
         run_test_mode()
+    elif "--visible" in sys.argv:
+        run_app(hide_console=False)
     else:
         run_app()
 

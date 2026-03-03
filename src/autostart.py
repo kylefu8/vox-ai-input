@@ -17,8 +17,8 @@ from src.logger import setup_logger
 log = setup_logger(__name__)
 
 # 注册表/plist 中使用的应用标识
-_APP_NAME = "VoxAI"
-_MACOS_LABEL = "com.voxai.app"
+_APP_NAME = "VoxAIInput"
+_MACOS_LABEL = "com.voxaiinput.app"
 
 
 def get_autostart_supported():

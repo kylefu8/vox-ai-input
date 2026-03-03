@@ -1,4 +1,4 @@
-# VoxAI
+# Vox AI Input
 
 **AI 驱动的语音输入法** — 长按快捷键说话，松开后文字自动粘贴到当前应用。
 
@@ -30,8 +30,8 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/your-username/VoxAI.git
-cd VoxAI
+git clone https://github.com/your-username/Vox-AI-Input.git
+cd Vox-AI-Input
 ```
 
 ### 2. 创建虚拟环境
@@ -61,7 +61,7 @@ Copy-Item config.example.yaml config.yaml
 python run.py
 ```
 
-启动后长按 `Alt+Z` 说话，松开后文字自动粘贴到当前光标位置。
+启动后控制台窗口会自动隐藏，程序以系统托盘图标形式运行。长按 `Alt+Z` 说话，松开后文字自动粘贴到当前光标位置。
 
 ## 使用方法
 
@@ -73,6 +73,14 @@ python run.py
 | 托盘右键 → 设置 | 打开设置窗口 |
 | 托盘右键 → 退出 | 关闭程序 |
 
+### 启动参数
+
+| 参数 | 说明 |
+|------|------|
+| `python run.py` | 正常模式（隐藏控制台，托盘运行） |
+| `python run.py --test` | 测试模式（按回车控制录音） |
+| `python run.py --visible` | 正常模式但保留控制台窗口（调试用） |
+
 ### 系统托盘状态
 
 | 颜色 | 状态 |
@@ -80,14 +88,6 @@ python run.py
 | ⚪ 灰色 | 空闲，等待输入 |
 | 🔴 红色 | 录音中 |
 | 🟡 黄色 | 处理中（转写 + 润色） |
-
-### 测试模式
-
-```powershell
-python run.py --test
-```
-
-用回车键控制录音，方便在终端中调试。
 
 ### 调试日志
 
@@ -116,7 +116,7 @@ $env:AI_INPUT_LOG_LEVEL="DEBUG"; python run.py
 ## 项目结构
 
 ```
-VoxAI/
+Vox-AI-Input/
 ├── run.py                  # 程序入口
 ├── config.example.yaml     # 配置模板
 ├── requirements.txt        # 运行依赖
@@ -158,7 +158,7 @@ python -m pytest tests/ -v
 
 **粘贴时目标应用没反应**
 - 部分以管理员权限运行的程序可能无法接收模拟按键
-- 尝试以管理员身份运行 VoxAI
+- 尝试以管理员身份运行 Vox AI Input
 
 **API 调用超时**
 - 默认超时 60 秒，检查网络连接和 Azure 服务状态

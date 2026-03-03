@@ -200,7 +200,7 @@ class Recorder:
         """
         # 在系统临时目录创建 WAV 文件
         temp_file = tempfile.NamedTemporaryFile(
-            suffix=".wav", prefix="voxai_", delete=False
+            suffix=".wav", prefix="vox_ai_input_", delete=False
         )
         wav_path = Path(temp_file.name)
         temp_file.close()
