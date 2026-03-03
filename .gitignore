@@ -32,6 +32,10 @@ nul
 *.tmp
 *.log
 
+# ========== 内部开发文件（不发布） ==========
+WINDOWS_COMPAT_PLAN.md
+init_claude_code.py
+
 # ========== 音频（排除临时录音，但保留 assets 下的提示音） ==========
 *.wav
 !assets/sounds/*.wav

@@ -51,7 +51,7 @@ class AIInputApp:
     def __init__(self):
         """初始化主控制器，加载配置并创建所有子模块。"""
         log.info("=" * 50)
-        log.info("AI-Input 语音输入法 — 正在启动...")
+        log.info("VoxAI 语音输入法 — 正在启动...")
         log.info("=" * 50)
 
         # 加载配置
@@ -128,7 +128,7 @@ class AIInputApp:
         self._tray.start()
 
         log.info("")
-        log.info("🎤 AI-Input 已启动！")
+        log.info("🎤 VoxAI 已启动！")
         log.info("长按快捷键说话，松开后文字自动粘贴到当前应用")
         log.info("录音中按 Esc 可取消当前录音")
         log.info("按 Ctrl+C 或通过托盘菜单退出程序")

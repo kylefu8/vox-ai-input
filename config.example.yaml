@@ -1,4 +1,4 @@
-# AI-Input 配置模板
+# VoxAI 配置模板
 # 复制此文件为 config.yaml，填入你的 Azure API 信息
 
 azure:
@@ -24,12 +24,33 @@ recording:
     # 最大录音时长（秒），超过自动停止
     max_duration: 60
 
+    # 指定录音设备名称（留空或注释掉则使用系统默认麦克风）
+    # 不同操作系统的设备名称不同，可运行 python -m sounddevice 查看可用设备列表
+    # macOS 示例:
+    #   device: "MacBook Pro Microphone"
+    #   device: "External Microphone"
+    # Windows 示例:
+    #   device: "Microphone (Realtek High Definition Audio)"
+    #   device: "Headset Microphone (Jabra)"
+    # device: ""
+
+    # Windows 音频后端（仅 Windows 生效，macOS/Linux 忽略此项）
+    # 可选值: wasapi（推荐）、directsound、mme
+    # 留空或注释掉则使用系统默认后端
+    # audio_backend: "wasapi"
+
+    # 静音检测 RMS 阈值（float32 音频范围 0.0 ~ 1.0）
+    # 录音结束后会计算 RMS 音量，低于此值视为静音，跳过 API 调用
+    # 正常说话 RMS 大约 0.02 ~ 0.2，安静环境噪音约 0.001 ~ 0.005
+    # 设为 0 则关闭静音检测
+    silence_threshold: 0.01
+
 # 热键设置
 hotkey:
     # 长按触发录音的快捷键
     # macOS: ctrl+shift+space
     # Windows: ctrl+shift+space
-    combination: "ctrl+shift+space"
+    combination: "alt+z"
 
 # 润色设置
 polish:
@@ -37,3 +58,26 @@ polish:
     enabled: true
     # Whisper 语音识别语言（留空则自动检测）
     language: "zh"
+
+# 输出设置
+output:
+    # 粘贴方式
+    # 可选值:
+    #   auto     — 自动选择最佳方式（推荐，默认值）
+    #              macOS: pynput 模拟 Cmd+V
+    #              Windows: pynput → Win32 SendInput 多级回退
+    #   pynput   — 强制使用 pynput 模拟按键（跨平台通用）
+    #   win32    — 强制使用 Windows 原生 SendInput API（仅 Windows）
+    #   clipboard — 只写入剪贴板，不模拟粘贴（用户手动 Ctrl+V / Cmd+V）
+    paste_method: "auto"
+
+# 语音唤醒设置（--voice 模式使用）
+wakeword:
+    # 唤醒词模型名称（openwakeword 内置模型）
+    # 可选: hey_jarvis, alexa, ok_google, hey_mycroft, hey_rhasspy
+    # 也可以填自定义 .onnx 模型文件路径
+    model: "hey_jarvis"
+    # 检测灵敏度 (0.0~1.0)，越高越严格，越不容易误触
+    threshold: 0.5
+    # 说完话后连续静音多久自动停止录音（秒）
+    silence_duration: 1.5

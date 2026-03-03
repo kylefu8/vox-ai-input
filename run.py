@@ -1,5 +1,5 @@
 """
-AI-Input 程序入口
+VoxAI 程序入口
 
 启动 AI 语音输入法：长按快捷键说话，松开后自动转写、润色并粘贴到当前应用。
 支持 --test 参数进入测试模式（按回车控制录音，便于调试）。
@@ -69,7 +69,7 @@ def run_test_mode():
     from src.transcriber import cleanup_audio
 
     log.info("=" * 50)
-    log.info("AI-Input 语音输入法 — 测试模式")
+    log.info("VoxAI 语音输入法 — 测试模式")
     log.info("=" * 50)
 
     recorder, transcriber, polisher, polish_cfg = _create_components()

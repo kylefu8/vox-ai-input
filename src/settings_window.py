@@ -101,7 +101,7 @@ class SettingsWindow:
     def _build_ui(self):
         """构建完整的窗口 UI。"""
         self._root = tk.Tk()
-        self._root.title("AI-Input 设置")
+        self._root.title("VoxAI 设置")
         self._root.resizable(False, False)
         self._root.protocol("WM_DELETE_WINDOW", self._on_close)
 

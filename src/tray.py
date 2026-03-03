@@ -27,15 +27,15 @@ STATE_PROCESSING = "processing"
 _STATE_CONFIG = {
     STATE_IDLE: {
         "color": "#888888",
-        "title": "AI-Input — 空闲",
+        "title": "VoxAI — 空闲",
     },
     STATE_RECORDING: {
         "color": "#FF3333",
-        "title": "AI-Input — 录音中...",
+        "title": "VoxAI — 录音中...",
     },
     STATE_PROCESSING: {
         "color": "#FFAA00",
-        "title": "AI-Input — 处理中...",
+        "title": "VoxAI — 处理中...",
     },
 }
 
@@ -122,7 +122,7 @@ class TrayIcon:
 
             menu = pystray.Menu(
                 pystray.MenuItem(
-                    "AI-Input 语音输入法",
+                    "VoxAI 语音输入法",
                     None,
                     enabled=False,
                 ),
@@ -139,7 +139,7 @@ class TrayIcon:
             )
 
             self._icon = pystray.Icon(
-                name="ai-input",
+                name="voxai",
                 icon=self._icon_cache[STATE_IDLE],
                 title=_STATE_CONFIG[STATE_IDLE]["title"],
                 menu=menu,
