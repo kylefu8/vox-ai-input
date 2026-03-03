@@ -19,6 +19,10 @@ log = setup_logger(__name__)
 # 提示音文件目录
 SOUNDS_DIR = Path(__file__).resolve().parent.parent / "assets" / "sounds"
 
+# 提示音内存缓存：{name: (audio_data, sample_rate)}
+# 在 create_default_sounds() 时填充，play_sound() 直接从这里读取
+_sound_cache = {}
+
 
 def _generate_beep(frequency=800, duration=0.15, sample_rate=44100, volume=0.3):
     """
@@ -63,11 +67,20 @@ def play_sound(sound_name, blocking=False):
     """
     def _play():
         try:
+            # 优先从内存缓存读取
+            if sound_name in _sound_cache:
+                data, samplerate = _sound_cache[sound_name]
+                sd.play(data, samplerate)
+                sd.wait()
+                return
+
             wav_path = SOUNDS_DIR / f"{sound_name}.wav"
 
             if wav_path.exists():
                 # 播放 WAV 文件
                 data, samplerate = sf.read(str(wav_path), dtype="float32")
+                # 缓存到内存供下次使用
+                _sound_cache[sound_name] = (data, samplerate)
                 sd.play(data, samplerate)
                 sd.wait()
             else:
@@ -128,3 +141,14 @@ def create_default_sounds():
                 log.info("已生成默认提示音: %s", wav_path)
             except Exception as e:
                 log.warning("生成提示音文件失败: %s", e)
+
+    # 预加载提示音到内存缓存，后续播放不再读磁盘
+    for name in sounds:
+        if name not in _sound_cache:
+            wav_path = SOUNDS_DIR / f"{name}.wav"
+            if wav_path.exists():
+                try:
+                    data, samplerate = sf.read(str(wav_path), dtype="float32")
+                    _sound_cache[name] = (data, samplerate)
+                except Exception as e:
+                    log.warning("预加载提示音失败: %s", e)

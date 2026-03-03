@@ -52,13 +52,14 @@ class Polisher:
         """
         self.deployment = deployment
 
-        # 获取共享的 Azure OpenAI 客户端（超时 30 秒，文字润色响应较快）
+        # 获取共享的 Azure OpenAI 客户端
+        # 与 Transcriber 使用相同参数，确保复用同一个客户端和 TCP 连接池
         self.client = get_azure_client(
             endpoint=endpoint,
             api_key=api_key,
             api_version=api_version,
-            timeout=30.0,
-            max_retries=2,
+            timeout=60.0,
+            max_retries=0,
         )
 
         log.info("GPT 润色器初始化完成（部署: %s）", deployment)
@@ -80,14 +81,18 @@ class Polisher:
         log.info("🤖 正在调用 GPT 润色文字...")
 
         try:
+            # 动态估算 max_tokens：润色输出不会超过输入太多
+            # 中文约 1 字 = 1~2 token，留余量但不过度预留
+            estimated_tokens = min(500, len(raw_text) * 3 + 50)
+
             response = self.client.chat.completions.create(
                 model=self.deployment,
                 messages=[
                     {"role": "system", "content": POLISH_SYSTEM_PROMPT},
                     {"role": "user", "content": raw_text},
                 ],
-                temperature=0.3,  # 低温度，减少创造性改写
-                max_tokens=2000,
+                temperature=0,  # 润色任务不需要创造性，0 最快最确定
+                max_tokens=estimated_tokens,
             )
 
             polished = response.choices[0].message.content.strip()

@@ -9,6 +9,7 @@
 """
 
 import platform
+import threading
 import time
 
 import pyperclip
@@ -78,9 +79,8 @@ def paste_text(text):
         log.error("粘贴文字失败: %s", e)
 
     finally:
-        # 4. 无论成功与否，等待后恢复原剪贴板
-        time.sleep(_PASTE_RESTORE_DELAY)
-        _restore_clipboard(original_clipboard)
+        # 4. 异步恢复剪贴板：不阻塞调用方，让 _is_processing 更早释放
+        _async_restore_clipboard(original_clipboard)
 
     return success
 
@@ -124,6 +124,23 @@ def _restore_clipboard(original_content):
         log.debug("剪贴板已恢复为原内容")
     except Exception as e:
         log.warning("恢复剪贴板失败（不影响使用）: %s", e)
+
+
+def _async_restore_clipboard(original_content):
+    """
+    异步恢复剪贴板：等待目标应用接收粘贴后，在后台线程中恢复。
+
+    这样调用方不需要阻塞等待 0.3 秒，处理流程可以更早结束。
+
+    Args:
+        original_content: 之前备份的剪贴板内容
+    """
+    def _delayed_restore():
+        time.sleep(_PASTE_RESTORE_DELAY)
+        _restore_clipboard(original_content)
+
+    thread = threading.Thread(target=_delayed_restore, daemon=True)
+    thread.start()
 
 
 def _simulate_paste():

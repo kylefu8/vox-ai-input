@@ -447,3 +447,16 @@ class TestClipboardProtection:
         with patch("src.output.pyperclip.copy") as mock_copy:
             _restore_clipboard("原来的文字")
             mock_copy.assert_called_once_with("原来的文字")
+
+    def test_async_restore_does_not_block(self):
+        """异步恢复不应阻塞调用方。"""
+        from src.output import _async_restore_clipboard
+
+        with patch("src.output._restore_clipboard") as mock_restore, \
+             patch("src.output.time.sleep"):
+            _async_restore_clipboard("测试内容")
+            # 异步调用应立即返回（不阻塞）
+            # 等后台线程执行完
+            import time
+            time.sleep(0.1)
+            mock_restore.assert_called_once_with("测试内容")

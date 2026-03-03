@@ -14,7 +14,7 @@ log = setup_logger(__name__)
 _client_cache = {}
 
 
-def get_azure_client(endpoint, api_key, api_version, timeout=60.0, max_retries=2):
+def get_azure_client(endpoint, api_key, api_version, timeout=60.0, max_retries=0):
     """
     获取一个 AzureOpenAI 客户端实例（同配置复用）。
 

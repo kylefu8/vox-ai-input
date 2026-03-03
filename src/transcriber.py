@@ -62,7 +62,7 @@ class Transcriber:
             api_key=api_key,
             api_version=api_version,
             timeout=60.0,
-            max_retries=2,
+            max_retries=0,
         )
 
         log.info("语音转写器初始化完成（部署: %s）", deployment)
