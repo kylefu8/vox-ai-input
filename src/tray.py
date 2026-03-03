@@ -10,7 +10,6 @@
 跨平台兼容 macOS 和 Windows。
 """
 
-import sys
 import threading
 
 from PIL import Image, ImageDraw
@@ -129,7 +128,7 @@ class TrayIcon:
             )
             self._thread.start()
 
-            log.info("系统托盘图标已启动")
+            log.debug("系统托盘图标已启动")
 
         except Exception as e:
             log.warning("系统托盘图标启动失败（不影响核心功能）: %s", e)
@@ -139,7 +138,7 @@ class TrayIcon:
         try:
             if self._icon:
                 self._icon.stop()
-                log.info("系统托盘图标已停止")
+                log.debug("系统托盘图标已停止")
         except Exception as e:
             log.warning("停止托盘图标时出错: %s", e)
 
@@ -168,10 +167,15 @@ class TrayIcon:
         """
         处理用户点击"退出"菜单项。
 
+        先停止托盘图标，然后调用退出回调（由 app.py 负责优雅关闭），
+        最后使用 os._exit() 确保所有线程终止。
+
         Args:
             icon: pystray 图标实例
             item: 被点击的菜单项
         """
+        import os
+
         log.info("用户通过托盘菜单退出程序")
         self.stop()
 
@@ -181,4 +185,6 @@ class TrayIcon:
             except Exception as e:
                 log.error("退出回调执行失败: %s", e)
 
-        sys.exit(0)
+        # 使用 os._exit 而非 sys.exit，因为 sys.exit 仅抛出 SystemExit 异常，
+        # 在非主线程中可能无法真正终止程序
+        os._exit(0)

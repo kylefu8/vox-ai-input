@@ -9,6 +9,7 @@ import threading
 from pathlib import Path
 
 import numpy as np
+import sounddevice as sd
 import soundfile as sf
 
 from src.logger import setup_logger
@@ -62,8 +63,6 @@ def play_sound(sound_name, blocking=False):
     """
     def _play():
         try:
-            import sounddevice as sd
-
             wav_path = SOUNDS_DIR / f"{sound_name}.wav"
 
             if wav_path.exists():

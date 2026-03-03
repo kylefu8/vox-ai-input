@@ -30,10 +30,10 @@ def get_azure_client(endpoint, api_key, api_version, timeout=60.0, max_retries=2
     Returns:
         AzureOpenAI 客户端实例
     """
-    cache_key = (endpoint, api_key, api_version)
+    cache_key = (endpoint, api_key, api_version, timeout, max_retries)
 
     if cache_key in _client_cache:
-        log.info("复用已有的 Azure OpenAI 客户端")
+        log.debug("复用已有的 Azure OpenAI 客户端")
         return _client_cache[cache_key]
 
     client = AzureOpenAI(

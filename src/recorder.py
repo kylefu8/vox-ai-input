@@ -46,7 +46,8 @@ class Recorder:
         self._is_recording = False
         self._stream = None
         self._audio_chunks = []  # 存放录音数据片段
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()       # 保护 _audio_chunks
+        self._state_lock = threading.Lock() # 保护 start/stop 并发
 
         # 自动停止定时器
         self._auto_stop_timer = None
@@ -68,72 +69,79 @@ class Recorder:
         Returns:
             bool: 是否成功开始录音
         """
-        if self._is_recording:
-            log.warning("已经在录音中，忽略重复的 start 调用")
-            return False
+        with self._state_lock:
+            if self._is_recording:
+                log.warning("已经在录音中，忽略重复的 start 调用")
+                return False
 
-        try:
-            # 清空之前的录音数据
-            self._audio_chunks = []
-            self._on_auto_stop = on_auto_stop
+            try:
+                # 清空之前的录音数据
+                self._audio_chunks = []
+                self._on_auto_stop = on_auto_stop
 
-            # 创建音频输入流（回调模式）
-            self._stream = sd.InputStream(
-                samplerate=self.sample_rate,
-                channels=self.channels,
-                dtype="float32",
-                callback=self._audio_callback,
-            )
-            self._stream.start()
-            self._is_recording = True
+                # 创建音频输入流（回调模式）
+                self._stream = sd.InputStream(
+                    samplerate=self.sample_rate,
+                    channels=self.channels,
+                    dtype="float32",
+                    callback=self._audio_callback,
+                )
+                self._stream.start()
+                self._is_recording = True
 
-            # 设置最大录音时长的自动停止定时器
-            self._auto_stop_timer = threading.Timer(
-                self.max_duration, self._auto_stop
-            )
-            self._auto_stop_timer.daemon = True
-            self._auto_stop_timer.start()
+                # 设置最大录音时长的自动停止定时器
+                self._auto_stop_timer = threading.Timer(
+                    self.max_duration, self._auto_stop
+                )
+                self._auto_stop_timer.daemon = True
+                self._auto_stop_timer.start()
 
-            log.info("🎤 开始录音（采样率: %d Hz，最长: %d 秒）",
-                      self.sample_rate, self.max_duration)
-            return True
+                log.info("🎤 开始录音（采样率: %d Hz，最长: %d 秒）",
+                          self.sample_rate, self.max_duration)
+                return True
 
-        except sd.PortAudioError as e:
-            log.error("无法访问麦克风: %s", e)
-            log.error("请检查系统是否已授权麦克风访问权限")
-            self._is_recording = False
-            return False
-        except Exception as e:
-            log.error("录音启动失败: %s", e)
-            self._is_recording = False
-            return False
+            except sd.PortAudioError as e:
+                log.error("无法访问麦克风: %s", e)
+                log.error("请检查系统是否已授权麦克风访问权限")
+                self._is_recording = False
+                return False
+            except Exception as e:
+                log.error("录音启动失败: %s", e)
+                self._is_recording = False
+                return False
 
     def stop(self):
         """
         停止录音并保存为 WAV 文件。
 
+        线程安全：可从多个线程调用（手动停止 / 自动停止），
+        通过 _state_lock 保证只有第一个调用者执行实际停止。
+
         Returns:
             Path | None: 录音文件路径，如果录音失败或无数据则返回 None
         """
-        if not self._is_recording:
-            log.warning("当前未在录音，忽略 stop 调用")
-            return None
+        with self._state_lock:
+            if not self._is_recording:
+                log.warning("当前未在录音，忽略 stop 调用")
+                return None
 
-        # 取消自动停止定时器
-        if self._auto_stop_timer:
-            self._auto_stop_timer.cancel()
-            self._auto_stop_timer = None
-
-        # 停止并关闭音频流
-        try:
-            if self._stream:
-                self._stream.stop()
-                self._stream.close()
-        except Exception as e:
-            log.warning("关闭音频流时出错: %s", e)
-        finally:
-            self._stream = None
+            # 标记为非录音状态（在锁内，防止重入）
             self._is_recording = False
+
+            # 取消自动停止定时器
+            if self._auto_stop_timer:
+                self._auto_stop_timer.cancel()
+                self._auto_stop_timer = None
+
+            # 停止并关闭音频流
+            try:
+                if self._stream:
+                    self._stream.stop()
+                    self._stream.close()
+            except Exception as e:
+                log.warning("关闭音频流时出错: %s", e)
+            finally:
+                self._stream = None
 
         log.info("⏹️  停止录音")
 
@@ -145,7 +153,7 @@ class Recorder:
             audio_data = np.concatenate(self._audio_chunks, axis=0)
 
         duration = len(audio_data) / self.sample_rate
-        log.info("录音时长: %.1f 秒（%d 个采样点）", duration, len(audio_data))
+        log.debug("录音时长: %.1f 秒（%d 个采样点）", duration, len(audio_data))
 
         # 如果录音太短（不到 0.3 秒），可能是误触
         if duration < 0.3:
@@ -155,7 +163,7 @@ class Recorder:
         # 保存为临时 WAV 文件
         try:
             wav_path = self._save_to_wav(audio_data)
-            log.info("录音已保存: %s", wav_path)
+            log.debug("录音已保存: %s", wav_path)
             return wav_path
         except Exception as e:
             log.error("保存录音文件失败: %s", e)

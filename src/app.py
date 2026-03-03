@@ -11,6 +11,8 @@ AIInputApp 负责协调所有子模块，管理应用的状态机：
 """
 
 import threading
+import time
+from typing import Optional
 
 from src.config import (
     load_config,
@@ -20,12 +22,13 @@ from src.config import (
     get_polish_config,
 )
 from src.hotkey import HotkeyListener
+from src.interfaces import TranscriberProtocol, PolisherProtocol
 from src.logger import setup_logger
 from src.notifier import play_start_sound, play_stop_sound, create_default_sounds
 from src.output import paste_text
 from src.polisher import Polisher
 from src.recorder import Recorder
-from src.transcriber import Transcriber
+from src.transcriber import Transcriber, cleanup_audio
 from src.tray import TrayIcon, STATE_IDLE, STATE_RECORDING, STATE_PROCESSING
 
 log = setup_logger(__name__)
@@ -63,16 +66,16 @@ class AIInputApp:
             max_duration=rec_cfg["max_duration"],
         )
 
-        # 初始化转写器
-        self._transcriber = Transcriber(
+        # 初始化转写器（满足 TranscriberProtocol）
+        self._transcriber: TranscriberProtocol = Transcriber(
             endpoint=azure_cfg["endpoint"],
             api_key=azure_cfg["api_key"],
             api_version=azure_cfg["api_version"],
             deployment=azure_cfg["whisper_deployment"],
         )
 
-        # 初始化润色器（如果启用）
-        self._polisher = None
+        # 初始化润色器（如果启用，满足 PolisherProtocol）
+        self._polisher: Optional[PolisherProtocol] = None
         self._polish_enabled = polish_cfg.get("enabled", True)
         if self._polish_enabled:
             self._polisher = Polisher(
@@ -157,7 +160,10 @@ class AIInputApp:
         play_start_sound()
 
         # 开始录音（设置自动停止回调）
-        self._recorder.start(on_auto_stop=self._process_audio)
+        if not self._recorder.start(on_auto_stop=self._process_audio):
+            # 录音启动失败，恢复空闲状态
+            log.error("录音启动失败，请检查麦克风")
+            self._tray.set_state(STATE_IDLE)
 
     def _on_hotkey_release(self):
         """
@@ -175,6 +181,7 @@ class AIInputApp:
         wav_path = self._recorder.stop()
         if not wav_path:
             log.warning("没有有效的录音数据")
+            self._tray.set_state(STATE_IDLE)
             return
 
         # 启动后台线程处理（不阻塞热键监听）
@@ -200,7 +207,7 @@ class AIInputApp:
 
         # 清理临时文件（如果产生了的话）
         if wav_path:
-            self._transcriber.cleanup_audio(wav_path)
+            cleanup_audio(wav_path)
 
         # 恢复空闲状态
         self._tray.set_state(STATE_IDLE)
@@ -223,19 +230,24 @@ class AIInputApp:
 
         # 更新托盘状态为处理中
         self._tray.set_state(STATE_PROCESSING)
+        t_start = time.monotonic()
 
         try:
             # 1. 语音转文字
+            t1 = time.monotonic()
             raw_text = self._transcriber.transcribe(
                 wav_path, language=self._language
             )
 
             # 清理临时音频文件
-            self._transcriber.cleanup_audio(wav_path)
+            cleanup_audio(wav_path)
 
             if not raw_text:
                 log.warning("转写结果为空，跳过")
                 return
+
+            t2 = time.monotonic()
+            log.info("⏱️  转写耗时: %.1f 秒", t2 - t1)
 
             # 2. AI 润色
             if self._polisher and self._polish_enabled:
@@ -247,10 +259,16 @@ class AIInputApp:
                 log.warning("润色结果为空，跳过")
                 return
 
+            t3 = time.monotonic()
+            if self._polisher and self._polish_enabled:
+                log.info("⏱️  润色耗时: %.1f 秒", t3 - t2)
+
             # 3. 粘贴到当前应用
             log.info("🎯 最终文字: %s",
                       final_text[:80] + "..." if len(final_text) > 80 else final_text)
             paste_text(final_text)
+
+            log.info("⏱️  总处理耗时: %.1f 秒", time.monotonic() - t_start)
 
         except Exception as e:
             log.error("处理音频时出错: %s", e)

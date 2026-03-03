@@ -3,6 +3,8 @@
 
 调用 Azure OpenAI 的 Whisper API，将 WAV 录音文件转为文字。
 实现了 TranscriberProtocol 接口，可被其他转写实现替换。
+
+同时提供 cleanup_audio 工具函数，供任何模块删除临时音频文件。
 """
 
 from pathlib import Path
@@ -13,6 +15,24 @@ from src.azure_client import get_azure_client
 from src.logger import setup_logger
 
 log = setup_logger(__name__)
+
+
+def cleanup_audio(audio_path):
+    """
+    删除临时音频文件（模块级工具函数）。
+
+    可从任何地方调用，不再绑定到 Transcriber 实例。
+
+    Args:
+        audio_path: 要删除的音频文件路径
+    """
+    try:
+        path = Path(audio_path)
+        if path.exists():
+            path.unlink()
+            log.debug("已清理临时音频文件: %s", path.name)
+    except OSError as e:
+        log.warning("清理音频文件失败（不影响使用）: %s", e)
 
 
 class Transcriber:
@@ -106,15 +126,11 @@ class Transcriber:
 
     def cleanup_audio(self, audio_path):
         """
-        删除临时音频文件。
+        删除临时音频文件（向后兼容的实例方法）。
+
+        实际委托给模块级 cleanup_audio() 函数。
 
         Args:
             audio_path: 要删除的音频文件路径
         """
-        try:
-            path = Path(audio_path)
-            if path.exists():
-                path.unlink()
-                log.info("已清理临时音频文件: %s", path.name)
-        except OSError as e:
-            log.warning("清理音频文件失败（不影响使用）: %s", e)
+        cleanup_audio(audio_path)

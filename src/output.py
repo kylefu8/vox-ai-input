@@ -12,10 +12,18 @@ import platform
 import time
 
 import pyperclip
+from pynput.keyboard import Controller, Key
 
 from src.logger import setup_logger
 
 log = setup_logger(__name__)
+
+# 模块级 Controller 单例，避免每次粘贴都创建新实例
+_keyboard_controller = Controller()
+
+# 粘贴时序常量（秒），可根据不同系统/应用微调
+_CLIPBOARD_WRITE_DELAY = 0.05   # 写入剪贴板后等待，确保系统同步
+_PASTE_RESTORE_DELAY = 0.3      # 粘贴后等待，确保目标应用接收完成再恢复剪贴板
 
 
 def paste_text(text):
@@ -43,13 +51,13 @@ def paste_text(text):
         log.info("📋 文字已写入剪贴板（%d 字符）", len(text))
 
         # 3. 短暂等待，确保剪贴板更新完成
-        time.sleep(0.05)
+        time.sleep(_CLIPBOARD_WRITE_DELAY)
 
         # 4. 模拟粘贴快捷键
         _simulate_paste()
 
         # 5. 等待粘贴动作完成后，恢复原剪贴板
-        time.sleep(0.2)
+        time.sleep(_PASTE_RESTORE_DELAY)
         _restore_clipboard(original_clipboard)
 
         log.info("✅ 文字已粘贴到当前应用")
@@ -87,7 +95,7 @@ def _restore_clipboard(original_content):
 
     try:
         pyperclip.copy(original_content)
-        log.info("剪贴板已恢复为原内容")
+        log.debug("剪贴板已恢复为原内容")
     except Exception as e:
         log.warning("恢复剪贴板失败（不影响使用）: %s", e)
 
@@ -99,29 +107,25 @@ def _simulate_paste():
     macOS: Cmd+V
     Windows: Ctrl+V
 
-    使用 pynput 的 Controller 来模拟按键。
+    使用模块级 Controller 单例来模拟按键。
     """
     system = platform.system()
 
     try:
-        from pynput.keyboard import Controller, Key
-
-        keyboard = Controller()
-
         if system == "Darwin":
             # macOS: Cmd+V
-            keyboard.press(Key.cmd)
-            keyboard.press("v")
-            keyboard.release("v")
-            keyboard.release(Key.cmd)
-            log.info("模拟 Cmd+V 粘贴")
+            _keyboard_controller.press(Key.cmd)
+            _keyboard_controller.press("v")
+            _keyboard_controller.release("v")
+            _keyboard_controller.release(Key.cmd)
+            log.debug("模拟 Cmd+V 粘贴")
         else:
             # Windows / Linux: Ctrl+V
-            keyboard.press(Key.ctrl)
-            keyboard.press("v")
-            keyboard.release("v")
-            keyboard.release(Key.ctrl)
-            log.info("模拟 Ctrl+V 粘贴")
+            _keyboard_controller.press(Key.ctrl)
+            _keyboard_controller.press("v")
+            _keyboard_controller.release("v")
+            _keyboard_controller.release(Key.ctrl)
+            log.debug("模拟 Ctrl+V 粘贴")
 
     except Exception as e:
         log.error("模拟粘贴键失败: %s", e)

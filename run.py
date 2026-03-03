@@ -12,31 +12,28 @@ from src.logger import setup_logger
 log = setup_logger("main")
 
 
-def run_test_mode():
+def _create_components():
     """
-    测试模式：按回车控制录音，方便在终端中调试。
+    创建核心组件（录音器、转写器、润色器）。
 
-    完整流水线：按回车录音 → 按回车停止 → 转写 → 润色 → 粘贴。
+    从 config.yaml 加载配置，初始化各模块。
+    供 run_test_mode() 和 AIInputApp 复用同一套初始化逻辑。
+
+    Returns:
+        tuple: (recorder, transcriber, polisher_or_none, polish_config)
     """
     from src.config import (
         load_config, get_azure_config, get_recording_config, get_polish_config
     )
-    from src.output import paste_text
     from src.polisher import Polisher
     from src.recorder import Recorder
     from src.transcriber import Transcriber
 
-    log.info("=" * 50)
-    log.info("AI-Input 语音输入法 — 测试模式")
-    log.info("=" * 50)
-
-    # 加载配置
     config = load_config()
     azure_cfg = get_azure_config(config)
     rec_cfg = get_recording_config(config)
     polish_cfg = get_polish_config(config)
 
-    # 初始化模块
     recorder = Recorder(
         sample_rate=rec_cfg["sample_rate"],
         channels=rec_cfg["channels"],
@@ -58,6 +55,24 @@ def run_test_mode():
             api_version=azure_cfg["api_version"],
             deployment=azure_cfg["gpt_deployment"],
         )
+
+    return recorder, transcriber, polisher, polish_cfg
+
+
+def run_test_mode():
+    """
+    测试模式：按回车控制录音，方便在终端中调试。
+
+    完整流水线：按回车录音 → 按回车停止 → 转写 → 润色 → 粘贴。
+    """
+    from src.output import paste_text
+    from src.transcriber import cleanup_audio
+
+    log.info("=" * 50)
+    log.info("AI-Input 语音输入法 — 测试模式")
+    log.info("=" * 50)
+
+    recorder, transcriber, polisher, polish_cfg = _create_components()
 
     log.info("")
     log.info("使用方法: 按 [回车] 开始录音，再按 [回车] 停止录音")
@@ -84,7 +99,7 @@ def run_test_mode():
                 wav_path,
                 language=polish_cfg.get("language", "zh"),
             )
-            transcriber.cleanup_audio(wav_path)
+            cleanup_audio(wav_path)
 
             if not raw_text:
                 log.warning("未能转写出文字，请检查是否有语音输入")

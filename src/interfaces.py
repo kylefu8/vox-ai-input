@@ -17,7 +17,8 @@ class TranscriberProtocol(Protocol):
     """
     语音转文字接口。
 
-    任何实现了 transcribe 和 cleanup_audio 方法的类都自动满足此协议。
+    任何实现了 transcribe 方法的类都自动满足此协议。
+    cleanup_audio 已移至 transcriber 模块级函数，不再属于接口。
     """
 
     def transcribe(self, audio_path: Path | str, language: str = "zh") -> str | None:
@@ -30,15 +31,6 @@ class TranscriberProtocol(Protocol):
 
         Returns:
             转写的文字，失败返回 None
-        """
-        ...
-
-    def cleanup_audio(self, audio_path: Path | str) -> None:
-        """
-        清理临时音频文件。
-
-        Args:
-            audio_path: 要删除的音频文件路径
         """
         ...
 

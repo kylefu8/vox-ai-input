@@ -226,6 +226,20 @@ class HotkeyListener:
                         except Exception as e:
                             log.error("on_activate 回调出错: %s", e)
 
+    def _deactivate(self):
+        """
+        内部方法：执行去激活操作（停止录音回调）。
+
+        必须在 self._lock 锁内调用。
+        """
+        self._is_active = False
+        self._trigger_pressed = False
+        log.info("⚪ 热键松开 — 停止录音")
+        try:
+            self.on_deactivate()
+        except Exception as e:
+            log.error("on_deactivate 回调出错: %s", e)
+
     def _on_release(self, key):
         """
         按键松开事件处理。
@@ -238,24 +252,12 @@ class HotkeyListener:
             for mod in self._modifiers:
                 if self._match_key(key, mod):
                     self._pressed_modifiers.discard(mod)
-                    # 修饰键松开也要取消激活
                     if self._is_active:
-                        self._is_active = False
-                        self._trigger_pressed = False
-                        log.info("⚪ 热键松开 — 停止录音")
-                        try:
-                            self.on_deactivate()
-                        except Exception as e:
-                            log.error("on_deactivate 回调出错: %s", e)
+                        self._deactivate()
                     return
 
             # 检查是否松开了触发键
             if self._match_key(key, self._trigger):
                 self._trigger_pressed = False
                 if self._is_active:
-                    self._is_active = False
-                    log.info("⚪ 热键松开 — 停止录音")
-                    try:
-                        self.on_deactivate()
-                    except Exception as e:
-                        log.error("on_deactivate 回调出错: %s", e)
+                    self._deactivate()

@@ -93,8 +93,8 @@ class Polisher:
                 log.info("✅ 原文已经很好，无需修改")
             else:
                 log.info("✅ 润色完成")
-                log.info("   原文: %s", raw_text[:60] + "..." if len(raw_text) > 60 else raw_text)
-                log.info("   润色: %s", polished[:60] + "..." if len(polished) > 60 else polished)
+                log.debug("   原文: %s", raw_text[:60] + "..." if len(raw_text) > 60 else raw_text)
+                log.debug("   润色: %s", polished[:60] + "..." if len(polished) > 60 else polished)
 
             return polished
 
