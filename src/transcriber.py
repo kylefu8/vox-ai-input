@@ -1,7 +1,8 @@
 """
 语音转文字模块
 
-调用 Azure OpenAI 的 Whisper API，将 WAV 录音文件转为文字。
+调用 Azure OpenAI 的语音转写 API（支持 Whisper、gpt-4o-transcribe 等模型），
+将 WAV 录音文件转为文字。
 实现了 TranscriberProtocol 接口，可被其他转写实现替换。
 
 同时提供 cleanup_audio 工具函数，供任何模块删除临时音频文件。
@@ -37,10 +38,10 @@ def cleanup_audio(audio_path):
 
 class Transcriber:
     """
-    Azure Whisper 语音转文字处理器。
+    Azure 语音转文字处理器。
 
     实现 TranscriberProtocol 接口。
-    使用 Azure OpenAI 的 Whisper 模型将音频文件转为文字。
+    使用 Azure OpenAI 的语音转写模型（Whisper、gpt-4o-transcribe 等）将音频文件转为文字。
     """
 
     def __init__(self, endpoint, api_key, api_version, deployment):
@@ -64,7 +65,7 @@ class Transcriber:
             max_retries=2,
         )
 
-        log.info("Whisper 转写器初始化完成（部署: %s）", deployment)
+        log.info("语音转写器初始化完成（部署: %s）", deployment)
 
     def transcribe(self, audio_path, language="zh"):
         """
@@ -84,7 +85,7 @@ class Transcriber:
             log.error("音频文件不存在: %s", audio_path)
             return None
 
-        log.info("📡 正在调用 Whisper API 转写语音...")
+        log.info("📡 正在调用语音转写 API...")
 
         try:
             with open(audio_path, "rb") as audio_file:
@@ -105,22 +106,22 @@ class Transcriber:
             text = result.strip() if isinstance(result, str) else str(result).strip()
 
             if not text:
-                log.warning("Whisper 返回了空文字，可能录音中没有语音内容")
+                log.warning("转写 API 返回了空文字，可能录音中没有语音内容")
                 return None
 
             log.info("✅ 转写完成: %s", text[:80] + "..." if len(text) > 80 else text)
             return text
 
         except APITimeoutError:
-            log.error("Whisper API 调用超时（60秒），请检查网络连接")
+            log.error("语音转写 API 调用超时（60秒），请检查网络连接")
             return None
         except APIConnectionError as e:
             log.error("无法连接到 Azure 服务: %s", e)
             return None
         except Exception as e:
-            log.error("Whisper API 调用失败: %s", e)
+            log.error("语音转写 API 调用失败: %s", e)
             log.error("请检查: 1) Azure 端点和 Key 是否正确 "
-                       "2) Whisper 部署名称是否正确 "
+                       "2) 模型部署名称是否正确 "
                        "3) 网络连接是否正常")
             return None
 
