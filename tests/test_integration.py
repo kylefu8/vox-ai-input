@@ -460,3 +460,133 @@ class TestClipboardProtection:
             import time
             time.sleep(0.1)
             mock_restore.assert_called_once_with("测试内容")
+
+
+# =============================================================
+# 热重载测试
+# =============================================================
+
+class TestHotReload:
+    """测试设置窗口保存后的热重载逻辑。"""
+
+    def test_reload_config_rebuilds_transcriber(self):
+        """热重载应该重建转写器。"""
+        app = _make_app()
+        old_transcriber = app._transcriber
+
+        new_config = {
+            **MOCK_CONFIG,
+            "azure": {
+                **MOCK_CONFIG["azure"],
+                "api_key": "new-key-67890",
+            },
+        }
+
+        with patch("src.app.save_config"), \
+             patch("src.azure_client.AzureOpenAI"):
+            success, msg = app._reload_config(new_config)
+
+        assert success is True
+        assert app._transcriber is not old_transcriber
+
+    def test_reload_config_rebuilds_polisher(self):
+        """热重载应该重建润色器。"""
+        app = _make_app()
+        old_polisher = app._polisher
+
+        with patch("src.app.save_config"), \
+             patch("src.azure_client.AzureOpenAI"):
+            success, msg = app._reload_config(MOCK_CONFIG)
+
+        assert success is True
+        assert app._polisher is not old_polisher
+
+    def test_reload_config_disables_polisher(self):
+        """热重载时关闭润色应将 polisher 设为 None。"""
+        app = _make_app()
+        assert app._polisher is not None
+
+        new_config = {
+            **MOCK_CONFIG,
+            "polish": {"enabled": False, "language": "zh"},
+        }
+
+        with patch("src.app.save_config"), \
+             patch("src.azure_client.AzureOpenAI"):
+            success, msg = app._reload_config(new_config)
+
+        assert success is True
+        assert app._polisher is None
+        assert app._polish_enabled is False
+
+    def test_reload_config_updates_recorder_params(self):
+        """热重载应该更新录音参数。"""
+        app = _make_app()
+
+        new_config = {
+            **MOCK_CONFIG,
+            "recording": {
+                "sample_rate": 44100,
+                "channels": 2,
+                "max_duration": 120,
+            },
+        }
+
+        with patch("src.app.save_config"), \
+             patch("src.azure_client.AzureOpenAI"):
+            success, msg = app._reload_config(new_config)
+
+        assert success is True
+        assert app._recorder.sample_rate == 44100
+        assert app._recorder.channels == 2
+        assert app._recorder.max_duration == 120
+
+    def test_reload_config_clears_client_cache(self):
+        """热重载应该清除旧的 Azure 客户端缓存。"""
+        import src.azure_client
+        app = _make_app()
+
+        # 模拟缓存中有旧内容
+        src.azure_client._client_cache["old_stale_key"] = "dummy"
+
+        with patch("src.app.save_config"), \
+             patch("src.azure_client.AzureOpenAI"):
+            app._reload_config(MOCK_CONFIG)
+
+        # 旧的缓存 key 应该被清除（重建组件会添加新缓存，但旧的已清除）
+        assert "old_stale_key" not in src.azure_client._client_cache
+
+    def test_reload_config_save_failure(self):
+        """保存文件失败时应返回失败。"""
+        app = _make_app()
+
+        with patch("src.app.save_config", side_effect=ValueError("测试错误")):
+            success, msg = app._reload_config(MOCK_CONFIG)
+
+        assert success is False
+        assert "测试错误" in msg
+
+    def test_process_audio_records_last_result(self, tmp_path):
+        """处理完成后应记录最近结果。"""
+        app = _make_app()
+        wav_file = tmp_path / "test.wav"
+        wav_file.write_bytes(b"fake wav data")
+
+        app._transcriber.transcribe = MagicMock(return_value="你好世界")
+        app._polisher.polish = MagicMock(return_value="你好，世界。")
+
+        with patch("src.app.paste_text"), \
+             patch("src.app.cleanup_audio"):
+            app._process_audio(wav_file)
+
+        assert app._last_result_text == "你好，世界。"
+        assert app._last_result_duration > 0
+
+    def test_tray_has_settings_callback(self):
+        """TrayIcon 应该接收 on_settings 回调。"""
+        app = _make_app()
+        # app._tray 是 MagicMock，检查构造时传入了 on_settings 参数
+        from src.app import AIInputApp
+        # 验证 _open_settings 方法存在且可调用
+        assert hasattr(app, "_open_settings")
+        assert callable(app._open_settings)

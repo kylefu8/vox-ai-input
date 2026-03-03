@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from src.config import (
     load_config,
+    save_config,
     _validate_config,
     get_azure_config,
     get_recording_config,
@@ -204,3 +205,106 @@ class TestLoadConfig:
         with patch("src.config.CONFIG_PATH", config_file):
             with pytest.raises(SystemExit):
                 load_config()
+
+
+class TestSaveConfig:
+    """配置保存的测试。"""
+
+    VALID_CONFIG = {
+        "azure": {
+            "endpoint": "https://test.openai.azure.com/",
+            "api_key": "real-key-abc123",
+            "api_version": "2024-06-01",
+            "whisper_deployment": "whisper",
+            "gpt_deployment": "gpt-4o-mini",
+        },
+        "recording": {
+            "sample_rate": 16000,
+            "channels": 1,
+            "max_duration": 60,
+        },
+        "hotkey": {
+            "combination": "ctrl+shift+space",
+        },
+        "polish": {
+            "enabled": True,
+            "language": "zh",
+        },
+    }
+
+    def test_saves_valid_config(self, tmp_path):
+        """合法配置应该成功保存。"""
+        import yaml
+
+        config_file = tmp_path / "config.yaml"
+        with patch("src.config.CONFIG_PATH", config_file):
+            result = save_config(self.VALID_CONFIG)
+
+        assert result is True
+        assert config_file.exists()
+
+        # 验证写入的内容可以被读回
+        with open(config_file, encoding="utf-8") as f:
+            loaded = yaml.safe_load(f)
+        assert loaded["azure"]["endpoint"] == "https://test.openai.azure.com/"
+        assert loaded["azure"]["api_key"] == "real-key-abc123"
+
+    def test_missing_endpoint_raises(self):
+        """缺少 endpoint 应抛出 ValueError。"""
+        config = {
+            "azure": {
+                "endpoint": "",
+                "api_key": "key",
+                "whisper_deployment": "whisper",
+                "gpt_deployment": "gpt-4o-mini",
+            }
+        }
+        with pytest.raises(ValueError, match="端点 URL"):
+            save_config(config)
+
+    def test_missing_api_key_raises(self):
+        """缺少 api_key 应抛出 ValueError。"""
+        config = {
+            "azure": {
+                "endpoint": "https://test.openai.azure.com/",
+                "api_key": "  ",
+                "whisper_deployment": "whisper",
+                "gpt_deployment": "gpt-4o-mini",
+            }
+        }
+        with pytest.raises(ValueError, match="API Key"):
+            save_config(config)
+
+    def test_missing_whisper_raises(self):
+        """缺少 whisper_deployment 应抛出 ValueError。"""
+        config = {
+            "azure": {
+                "endpoint": "https://test.openai.azure.com/",
+                "api_key": "key",
+                "whisper_deployment": "",
+                "gpt_deployment": "gpt-4o-mini",
+            }
+        }
+        with pytest.raises(ValueError, match="转写模型"):
+            save_config(config)
+
+    def test_missing_gpt_raises(self):
+        """缺少 gpt_deployment 应抛出 ValueError。"""
+        config = {
+            "azure": {
+                "endpoint": "https://test.openai.azure.com/",
+                "api_key": "key",
+                "whisper_deployment": "whisper",
+                "gpt_deployment": "",
+            }
+        }
+        with pytest.raises(ValueError, match="润色模型"):
+            save_config(config)
+
+    def test_write_error_returns_false(self, tmp_path):
+        """写入失败应返回 False。"""
+        # 使用不存在的目录路径模拟写入失败
+        bad_path = tmp_path / "nonexistent_dir" / "config.yaml"
+        with patch("src.config.CONFIG_PATH", bad_path):
+            result = save_config(self.VALID_CONFIG)
+        assert result is False

@@ -16,6 +16,7 @@ from typing import Optional
 
 from src.config import (
     load_config,
+    save_config,
     get_azure_config,
     get_recording_config,
     get_hotkey_config,
@@ -28,6 +29,7 @@ from src.notifier import play_start_sound, play_stop_sound, create_default_sound
 from src.output import paste_text
 from src.polisher import Polisher
 from src.recorder import Recorder
+from src.settings_window import open_settings
 from src.transcriber import Transcriber, cleanup_audio
 from src.tray import TrayIcon, STATE_IDLE, STATE_RECORDING, STATE_PROCESSING
 
@@ -103,8 +105,15 @@ class AIInputApp:
         # 生成默认提示音文件
         create_default_sounds()
 
-        # 初始化系统托盘图标
-        self._tray = TrayIcon(on_quit=self._shutdown)
+        # 最近一次处理的结果（供设置窗口显示）
+        self._last_result_text = ""
+        self._last_result_duration = 0.0
+
+        # 初始化系统托盘图标（带设置回调）
+        self._tray = TrayIcon(
+            on_quit=self._shutdown,
+            on_settings=self._open_settings,
+        )
 
         log.info("所有模块初始化完成！")
 
@@ -290,7 +299,12 @@ class AIInputApp:
                       final_text[:80] + "..." if len(final_text) > 80 else final_text)
             paste_text(final_text)
 
-            log.info("⏱️  总处理耗时: %.1f 秒", time.monotonic() - t_start)
+            total_duration = time.monotonic() - t_start
+            log.info("⏱️  总处理耗时: %.1f 秒", total_duration)
+
+            # 记录最近结果（供设置窗口显示）
+            self._last_result_text = final_text
+            self._last_result_duration = total_duration
 
         except Exception as e:
             log.error("处理音频时出错: %s", e)
@@ -302,3 +316,95 @@ class AIInputApp:
                 self._is_processing = False
             # 处理完毕，恢复空闲状态
             self._tray.set_state(STATE_IDLE)
+
+    # ==================== 设置窗口 ====================
+
+    def _open_settings(self):
+        """
+        打开设置窗口（从托盘菜单触发）。
+
+        在新线程中创建 tkinter 窗口，不阻塞当前线程。
+        """
+        # 构建状态信息
+        state_map = {
+            STATE_IDLE: "idle",
+            STATE_RECORDING: "recording",
+            STATE_PROCESSING: "processing",
+        }
+        status_info = {
+            "state": state_map.get(self._tray._current_state, "idle"),
+            "last_text": self._last_result_text,
+            "last_duration": self._last_result_duration,
+        }
+
+        open_settings(
+            current_config=self._config,
+            status_info=status_info,
+            on_save=self._reload_config,
+        )
+
+    def _reload_config(self, new_config):
+        """
+        保存新配置并热重载受影响的模块。
+
+        Args:
+            new_config: 新的完整配置字典
+
+        Returns:
+            tuple: (bool, str) — 是否成功及提示消息
+        """
+        import src.azure_client
+
+        try:
+            # 1. 保存到文件
+            save_config(new_config)
+
+            # 2. 清除 Azure 客户端缓存（下次调用时自动重建）
+            src.azure_client._client_cache.clear()
+            log.info("已清除 API 客户端缓存")
+
+            # 3. 提取各部分配置
+            azure_cfg = get_azure_config(new_config)
+            rec_cfg = get_recording_config(new_config)
+            polish_cfg = get_polish_config(new_config)
+
+            # 4. 重建转写器
+            self._transcriber = Transcriber(
+                endpoint=azure_cfg["endpoint"],
+                api_key=azure_cfg["api_key"],
+                api_version=azure_cfg["api_version"],
+                deployment=azure_cfg["whisper_deployment"],
+            )
+
+            # 5. 重建/移除润色器
+            self._polish_enabled = polish_cfg.get("enabled", True)
+            if self._polish_enabled:
+                self._polisher = Polisher(
+                    endpoint=azure_cfg["endpoint"],
+                    api_key=azure_cfg["api_key"],
+                    api_version=azure_cfg["api_version"],
+                    deployment=azure_cfg["gpt_deployment"],
+                )
+            else:
+                self._polisher = None
+
+            # 6. 更新语言设置
+            self._language = polish_cfg.get("language", "zh")
+
+            # 7. 更新录音参数（下次录音时生效）
+            self._recorder.sample_rate = rec_cfg["sample_rate"]
+            self._recorder.channels = rec_cfg["channels"]
+            self._recorder.max_duration = rec_cfg["max_duration"]
+
+            # 8. 更新内部配置引用
+            self._config = new_config
+
+            log.info("配置已热重载完成")
+            return (True, "配置已保存并立即生效")
+
+        except ValueError as e:
+            log.error("配置验证失败: %s", e)
+            return (False, str(e))
+        except Exception as e:
+            log.error("热重载配置失败: %s", e)
+            return (False, f"保存失败: {e}")

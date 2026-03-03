@@ -1,8 +1,9 @@
 """
-配置加载模块
+配置加载与保存模块
 
 从 config.yaml 读取 Azure API 和其他配置项。
 如果 config.yaml 不存在，会提示用户从 config.example.yaml 复制。
+支持通过设置 UI 将修改后的配置写回 config.yaml。
 """
 
 import sys
@@ -54,6 +55,49 @@ def load_config():
 
     log.info("配置加载成功")
     return config
+
+
+def save_config(config_dict):
+    """
+    将配置字典写回 config.yaml。
+
+    会覆盖整个文件（PyYAML 无法保留注释）。
+    写入前做基本验证：azure 必填字段不能为空。
+
+    Args:
+        config_dict: 完整的配置字典
+
+    Returns:
+        bool: 是否保存成功
+
+    Raises:
+        ValueError: 当必填字段为空时
+    """
+    # 基本验证
+    azure = config_dict.get("azure", {})
+    if not azure.get("endpoint", "").strip():
+        raise ValueError("Azure 端点 URL 不能为空")
+    if not azure.get("api_key", "").strip():
+        raise ValueError("Azure API Key 不能为空")
+    if not azure.get("whisper_deployment", "").strip():
+        raise ValueError("转写模型部署名不能为空")
+    if not azure.get("gpt_deployment", "").strip():
+        raise ValueError("润色模型部署名不能为空")
+
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            yaml.dump(
+                config_dict,
+                f,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False,
+            )
+        log.info("配置已保存到 %s", CONFIG_PATH)
+        return True
+    except OSError as e:
+        log.error("保存配置文件失败: %s", e)
+        return False
 
 
 # config.example.yaml 中已知的占位符值，精确匹配避免误判

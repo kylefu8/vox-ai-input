@@ -81,14 +81,16 @@ class TrayIcon:
     如果 Pillow 或 pystray 未安装，所有方法静默降级为空操作。
     """
 
-    def __init__(self, on_quit=None):
+    def __init__(self, on_quit=None, on_settings=None):
         """
         初始化托盘图标。
 
         Args:
             on_quit: 用户点击"退出"菜单项时的回调函数
+            on_settings: 用户点击"设置"菜单项时的回调函数
         """
         self._on_quit = on_quit
+        self._on_settings = on_settings
         self._icon = None
         self._thread = None
         self._current_state = STATE_IDLE
@@ -123,6 +125,11 @@ class TrayIcon:
                     "AI-Input 语音输入法",
                     None,
                     enabled=False,
+                ),
+                pystray.Menu.SEPARATOR,
+                pystray.MenuItem(
+                    "设置",
+                    self._handle_settings,
                 ),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem(
@@ -182,6 +189,20 @@ class TrayIcon:
         except Exception as e:
             # 托盘更新失败不应影响核心功能
             log.warning("更新托盘图标失败: %s", e)
+
+    def _handle_settings(self, icon, item):
+        """
+        处理用户点击"设置"菜单项。
+
+        Args:
+            icon: pystray 图标实例
+            item: 被点击的菜单项
+        """
+        if self._on_settings:
+            try:
+                self._on_settings()
+            except Exception as e:
+                log.error("打开设置窗口失败: %s", e)
 
     def _handle_quit(self, icon, item):
         """
