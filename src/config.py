@@ -12,11 +12,12 @@ from pathlib import Path
 import yaml
 
 from src.logger import setup_logger
+from src.paths import get_project_root
 
 log = setup_logger(__name__)
 
-# 项目根目录（config.py 所在的 src/ 的上一级）
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# 项目根目录（打包模式下为 exe 所在目录，脚本模式下为代码根目录）
+PROJECT_ROOT = get_project_root()
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
 
 

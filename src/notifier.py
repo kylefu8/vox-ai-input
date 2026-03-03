@@ -13,11 +13,12 @@ import sounddevice as sd
 import soundfile as sf
 
 from src.logger import setup_logger
+from src.paths import get_resource_dir, is_frozen
 
 log = setup_logger(__name__)
 
-# 提示音文件目录
-SOUNDS_DIR = Path(__file__).resolve().parent.parent / "assets" / "sounds"
+# 提示音文件目录（打包模式下在 bundle 内部，脚本模式下在代码目录）
+SOUNDS_DIR = get_resource_dir() / "assets" / "sounds"
 
 # 提示音内存缓存：{name: (audio_data, sample_rate)}
 # 在 create_default_sounds() 时填充，play_sound() 直接从这里读取
@@ -124,23 +125,26 @@ def create_default_sounds():
     生成默认的提示音 WAV 文件到 assets/sounds/ 目录。
 
     如果文件已存在则跳过。
+    打包模式下跳过文件生成（提示音已打包在 bundle 内，且目录只读）。
     """
-    SOUNDS_DIR.mkdir(parents=True, exist_ok=True)
-
     sounds = {
         "start": {"frequency": 880, "duration": 0.12},
         "stop": {"frequency": 440, "duration": 0.15},
     }
 
-    for name, params in sounds.items():
-        wav_path = SOUNDS_DIR / f"{name}.wav"
-        if not wav_path.exists():
-            try:
-                audio = _generate_beep(**params)
-                sf.write(str(wav_path), audio, 44100)
-                log.info("已生成默认提示音: %s", wav_path)
-            except Exception as e:
-                log.warning("生成提示音文件失败: %s", e)
+    # 打包模式下不生成文件（bundle 内只读），只预加载缓存
+    if not is_frozen():
+        SOUNDS_DIR.mkdir(parents=True, exist_ok=True)
+
+        for name, params in sounds.items():
+            wav_path = SOUNDS_DIR / f"{name}.wav"
+            if not wav_path.exists():
+                try:
+                    audio = _generate_beep(**params)
+                    sf.write(str(wav_path), audio, 44100)
+                    log.info("已生成默认提示音: %s", wav_path)
+                except Exception as e:
+                    log.warning("生成提示音文件失败: %s", e)
 
     # 预加载提示音到内存缓存，后续播放不再读磁盘
     for name in sounds:

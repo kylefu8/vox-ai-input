@@ -3,7 +3,9 @@
 import json, os, pathlib, threading, webbrowser, urllib.request, urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
-_PROJECT_ROOT = pathlib.Path(__file__).resolve().parent.parent
+from src.paths import get_project_root
+
+_PROJECT_ROOT = get_project_root()
 _CONFIG_PATH = _PROJECT_ROOT / "config.yaml"
 _PORT = 8765
 

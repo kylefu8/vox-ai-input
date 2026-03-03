@@ -1,0 +1,72 @@
+name: Build & Release (Windows)
+
+# 触发条件：推送 v* 格式的 tag（如 v0.0.1）
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: # 允许手动触发（调试用）
+
+permissions:
+  contents: write # 允许创建 GitHub Release
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      # 1. 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 设置 Python 3.11（兼容性好，PyInstaller 支持完善）
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # 3. 安装运行依赖 + 打包工具
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller pyinstaller-hooks-contrib
+
+      # 4. 用 PyInstaller 打包
+      - name: Build with PyInstaller
+        run: pyinstaller build.spec --clean --noconfirm
+
+      # 5. 验证构建产物
+      - name: Verify build output
+        run: |
+          if (Test-Path "dist/VoxAIInput.exe") {
+            $size = (Get-Item "dist/VoxAIInput.exe").Length / 1MB
+            Write-Host "Build successful! Size: $([math]::Round($size, 1)) MB"
+          } else {
+            Write-Error "Build failed: VoxAIInput.exe not found"
+            exit 1
+          }
+
+      # 6. 上传构建产物（方便调试，保留 7 天）
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoxAIInput-Windows
+          path: dist/VoxAIInput.exe
+          retention-days: 7
+
+      # 7. 创建 GitHub Release 并上传 exe
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Vox AI Input ${{ github.ref_name }}"
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          generate_release_notes: true
+          files: |
+            dist/VoxAIInput.exe
+            config.example.yaml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -21,33 +21,41 @@
 ## 环境要求
 
 - **Windows** 10/11 (x86_64)
-- **Python** 3.10+
 - **Azure OpenAI** 需要已部署语音转写模型（如 gpt-4o-mini-transcribe）和 GPT 模型
 - **麦克风** 系统已授权访问
 
 ## 快速开始
 
-### 1. 克隆项目
+### 方式一：下载 exe（推荐）
+
+1. 从 [Releases](https://github.com/your-username/Vox-AI-Input/releases) 下载 `VoxAIInput.exe` 和 `config.example.yaml`
+2. 将两个文件放在同一个目录
+3. 复制 `config.example.yaml` 为 `config.yaml`，填入你的 Azure 端点和 API Key
+4. 双击 `VoxAIInput.exe` 运行
+
+### 方式二：从源码运行
+
+#### 1. 克隆项目
 
 ```bash
 git clone https://github.com/your-username/Vox-AI-Input.git
 cd Vox-AI-Input
 ```
 
-### 2. 创建虚拟环境
+#### 2. 创建虚拟环境
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 ```
 
-### 3. 安装依赖
+#### 3. 安装依赖
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-### 4. 配置 Azure API
+#### 4. 配置 Azure API
 
 ```powershell
 Copy-Item config.example.yaml config.yaml
@@ -55,7 +63,7 @@ Copy-Item config.example.yaml config.yaml
 
 编辑 `config.yaml`，填入你的 Azure 端点和 API Key。
 
-### 5. 启动
+#### 5. 启动
 
 ```powershell
 python run.py
@@ -118,12 +126,14 @@ $env:AI_INPUT_LOG_LEVEL="DEBUG"; python run.py
 ```
 Vox-AI-Input/
 ├── run.py                  # 程序入口
+├── build.spec              # PyInstaller 打包配置
 ├── config.example.yaml     # 配置模板
 ├── requirements.txt        # 运行依赖
-├── requirements-dev.txt    # 开发依赖（含 pytest）
+├── requirements-dev.txt    # 开发依赖（含 pytest、pyinstaller）
 ├── src/
 │   ├── app.py              # 主控制器，协调所有模块
 │   ├── config.py           # 配置加载、保存与验证
+│   ├── paths.py            # 路径工具（兼容 exe 和脚本模式）
 │   ├── hotkey.py           # 全局热键监听
 │   ├── recorder.py         # 麦克风录音
 │   ├── transcriber.py      # 语音转文字（Azure OpenAI）
@@ -137,7 +147,8 @@ Vox-AI-Input/
 │   ├── interfaces.py       # Protocol 接口定义
 │   └── logger.py           # 统一日志
 ├── tests/                  # 测试用例（120+）
-└── assets/sounds/          # 提示音文件
+├── assets/sounds/          # 提示音文件
+└── .github/workflows/      # CI/CD 自动构建
 ```
 
 ## 开发
