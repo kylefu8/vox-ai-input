@@ -243,3 +243,31 @@ class TestHotkeyListenerCancel:
         listener_no_cancel._on_press(keyboard.Key.space)
         # 按 Esc — 不应崩溃
         listener_no_cancel._on_press(keyboard.Key.esc)
+
+
+class TestWinKeySupport:
+    """Win/Windows 键支持的测试。"""
+
+    def test_win_as_modifier(self):
+        """win 应该被识别为修饰键（等同于 cmd）。"""
+        modifiers, trigger = _parse_hotkey_combination("win+space")
+        assert keyboard.Key.cmd in modifiers
+        assert trigger == keyboard.Key.space
+
+    def test_windows_as_modifier(self):
+        """windows 也应该被识别为修饰键。"""
+        modifiers, trigger = _parse_hotkey_combination("windows+space")
+        assert keyboard.Key.cmd in modifiers
+        assert trigger == keyboard.Key.space
+
+    def test_ctrl_win_combination(self):
+        """ctrl+win+空格 应该能正确解析。"""
+        modifiers, trigger = _parse_hotkey_combination("ctrl+win+space")
+        assert keyboard.Key.ctrl in modifiers
+        assert keyboard.Key.cmd in modifiers
+        assert trigger == keyboard.Key.space
+
+    def test_ctrl_win_without_trigger_raises(self):
+        """ctrl+win 没有触发键应该报错。"""
+        with pytest.raises(ValueError, match="快捷键配置无效"):
+            _parse_hotkey_combination("ctrl+win")

@@ -5,7 +5,7 @@
 提供以下功能：
 - 状态显示（当前状态 + 上次结果摘要）
 - API 配置（endpoint、key、模型名等）
-- 快捷键、润色开关、开机自启等常用设置
+- 快捷键（按键捕捉 + 冲突检测）、润色开关、开机自启等常用设置
 - 高级设置（采样率、声道、时长等，默认折叠）
 
 线程说明：
@@ -13,6 +13,7 @@
     用 _settings_open 标志防止重复打开。
 """
 
+import platform
 import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -24,6 +25,52 @@ log = setup_logger(__name__)
 
 # 全局标志：是否已有设置窗口打开（防止重复打开）
 _settings_open = False
+
+# ==================== 快捷键录制相关常量 ====================
+
+# tkinter keysym → 修饰键名称（与 hotkey.py 的 modifier_map 对应）
+_KEYSYM_TO_MODIFIER = {
+    "Control_L": "ctrl", "Control_R": "ctrl",
+    "Shift_L": "shift", "Shift_R": "shift",
+    "Alt_L": "alt", "Alt_R": "alt",
+    "Meta_L": "cmd", "Meta_R": "cmd",     # macOS Cmd
+    "Super_L": "win", "Super_R": "win",   # Windows Win
+    "Win_L": "win", "Win_R": "win",       # 某些 Windows 环境
+}
+
+# tkinter keysym → 触发键名称（与 hotkey.py 的 special_key_map 对应）
+_KEYSYM_TO_TRIGGER = {
+    "space": "space",
+    "Tab": "tab",
+    "Return": "enter",
+    "Escape": "esc",
+    "F1": "f1", "F2": "f2", "F3": "f3", "F4": "f4",
+    "F5": "f5", "F6": "f6", "F7": "f7", "F8": "f8",
+    "F9": "f9", "F10": "f10", "F11": "f11", "F12": "f12",
+    "BackSpace": "backspace",
+    "Delete": "delete",
+    "Insert": "insert",
+    "Home": "home",
+    "End": "end",
+    "Prior": "pageup",    # tkinter 中 Page Up 的 keysym
+    "Next": "pagedown",   # tkinter 中 Page Down 的 keysym
+}
+
+# 修饰键的排序优先级（保证输出一致）
+_MODIFIER_ORDER = ["ctrl", "alt", "shift", "cmd", "win"]
+
+# 常见系统保留/高冲突快捷键（警告，不阻止）
+_RESERVED_HOTKEYS = {
+    # 剪贴板基本操作
+    "ctrl+c", "ctrl+v", "ctrl+x", "ctrl+z", "ctrl+a",
+    "cmd+c", "cmd+v", "cmd+x", "cmd+z", "cmd+a",
+    # 系统级
+    "alt+f4", "alt+tab",
+    "cmd+q", "cmd+w", "cmd+tab", "cmd+space",
+    # 常用应用快捷键
+    "ctrl+s", "ctrl+p", "ctrl+f", "ctrl+n", "ctrl+w",
+    "ctrl+t", "ctrl+r",
+}
 
 
 class SettingsWindow:
@@ -205,6 +252,196 @@ class SettingsWindow:
         self._apikey_entry.config(show="" if self._show_key else "*")
         self._toggle_key_btn.config(text="隐藏" if self._show_key else "显示")
 
+    # ==================== 快捷键录制 ====================
+
+    def _start_hotkey_recording(self):
+        """开始录制快捷键：绑定键盘事件，等待用户按下组合键。"""
+        self._is_recording_hotkey = True
+        self._recording_modifiers = set()
+
+        # 切换 UI 状态
+        self._hotkey_var.set("按下快捷键组合...")
+        self._record_btn.config(
+            text="取消", command=self._cancel_hotkey_recording
+        )
+
+        # 绑定键盘事件到窗口
+        self._root.bind("<KeyPress>", self._on_hotkey_key_press)
+        self._root.bind("<KeyRelease>", self._on_hotkey_key_release)
+
+        # 聚焦到窗口（确保能接收键盘事件）
+        self._root.focus_force()
+
+    def _cancel_hotkey_recording(self):
+        """取消录制，恢复原来的快捷键。"""
+        self._stop_hotkey_recording()
+        # 恢复为原来的配置值
+        original = self._config.get("hotkey", {}).get(
+            "combination", "ctrl+shift+space"
+        )
+        self._hotkey_var.set(original)
+
+    def _stop_hotkey_recording(self):
+        """停止录制：解除键盘绑定，恢复按钮状态。"""
+        self._is_recording_hotkey = False
+        self._recording_modifiers = set()
+
+        # 解除键盘绑定
+        self._root.unbind("<KeyPress>")
+        self._root.unbind("<KeyRelease>")
+
+        # 恢复按钮
+        self._record_btn.config(
+            text="录制", command=self._start_hotkey_recording
+        )
+
+    def _on_hotkey_key_press(self, event):
+        """
+        录制模式下的按键按下处理。
+
+        修饰键按下 → 加入集合，实时更新显示。
+        非修饰键按下 → 组合出完整快捷键字符串，完成录制。
+        """
+        if not self._is_recording_hotkey:
+            return "break"
+
+        keysym = event.keysym
+
+        # 检查是否是修饰键
+        modifier = _KEYSYM_TO_MODIFIER.get(keysym)
+        if modifier:
+            self._recording_modifiers.add(modifier)
+            # 实时显示当前按下的修饰键
+            parts = self._sort_modifiers(self._recording_modifiers)
+            self._hotkey_var.set("+".join(parts) + "+...")
+            return "break"
+
+        # 非修饰键 → 组合出完整快捷键
+        trigger = self._keysym_to_trigger(keysym)
+        if not trigger:
+            # 无法识别的键，忽略
+            return "break"
+
+        # 组合出完整的快捷键字符串
+        parts = self._sort_modifiers(self._recording_modifiers) + [trigger]
+        combination = "+".join(parts)
+
+        # 停止录制
+        self._stop_hotkey_recording()
+        self._hotkey_var.set(combination)
+
+        # 检查冲突
+        self._check_hotkey_conflict(combination)
+
+        return "break"
+
+    def _on_hotkey_key_release(self, event):
+        """
+        录制模式下的按键松开处理。
+
+        修饰键松开 → 从集合移除。
+        """
+        if not self._is_recording_hotkey:
+            return "break"
+
+        keysym = event.keysym
+        modifier = _KEYSYM_TO_MODIFIER.get(keysym)
+        if modifier:
+            self._recording_modifiers.discard(modifier)
+            # 更新显示
+            if self._recording_modifiers:
+                parts = self._sort_modifiers(self._recording_modifiers)
+                self._hotkey_var.set("+".join(parts) + "+...")
+            else:
+                self._hotkey_var.set("按下快捷键组合...")
+
+        return "break"
+
+    @staticmethod
+    def _sort_modifiers(modifiers):
+        """
+        按固定顺序排列修饰键，保证输出一致（如 ctrl+shift 而不是 shift+ctrl）。
+
+        Args:
+            modifiers: 修饰键名称集合
+
+        Returns:
+            list: 排序后的修饰键名称列表
+        """
+        return [m for m in _MODIFIER_ORDER if m in modifiers]
+
+    @staticmethod
+    def _keysym_to_trigger(keysym):
+        """
+        将 tkinter keysym 转换为 hotkey.py 能识别的触发键名称。
+
+        Args:
+            keysym: tkinter 的按键标识
+
+        Returns:
+            str | None: 转换后的键名，无法识别则返回 None
+        """
+        # 先查特殊键表
+        trigger = _KEYSYM_TO_TRIGGER.get(keysym)
+        if trigger:
+            return trigger
+
+        # 单个可打印字符（字母、数字）
+        if len(keysym) == 1 and keysym.isprintable():
+            return keysym.lower()
+
+        # 不认识的键
+        return None
+
+    def _check_hotkey_conflict(self, combination):
+        """
+        检查快捷键是否与常见系统快捷键冲突。
+
+        冲突时弹出警告对话框（不阻止，让用户决定）。
+
+        Args:
+            combination: 快捷键字符串，如 "ctrl+c"
+        """
+        normalized = combination.lower()
+        warnings = []
+
+        # 检查是否在保留快捷键列表中
+        if normalized in _RESERVED_HOTKEYS:
+            warnings.append(
+                f"\"{combination}\" 是常用的系统/应用快捷键，"
+                "使用后可能影响正常操作。"
+            )
+
+        # 检查是否没有修饰键（纯单键）
+        parts = normalized.split("+")
+        has_modifier = any(
+            p in ("ctrl", "alt", "shift", "cmd", "win") for p in parts
+        )
+        if not has_modifier:
+            warnings.append(
+                f"快捷键 \"{combination}\" 没有修饰键（Ctrl/Alt/Shift 等），"
+                "可能与正常打字冲突。"
+            )
+
+        # macOS 特有的 Ctrl+Space 冲突
+        if platform.system() == "Darwin" and normalized == "ctrl+space":
+            warnings.append(
+                "macOS 上 Ctrl+Space 默认用于切换输入法，可能导致冲突。"
+            )
+
+        if warnings:
+            message = "\n\n".join(warnings)
+            message += "\n\n确定使用这个快捷键吗？"
+            if not messagebox.askyesno(
+                "快捷键冲突警告", message, parent=self._root,
+                icon="warning",
+            ):
+                # 用户取消，恢复原来的值
+                original = self._config.get("hotkey", {}).get(
+                    "combination", "ctrl+shift+space"
+                )
+                self._hotkey_var.set(original)
+
     # ==================== 常用设置区域 ====================
 
     def _build_common_section(self, parent):
@@ -215,16 +452,33 @@ class SettingsWindow:
         hotkey = self._config.get("hotkey", {})
         polish = self._config.get("polish", {})
 
-        # 快捷键
+        # ---- 快捷键（按键捕捉） ----
         row_frame = ttk.Frame(frame)
         row_frame.pack(fill="x", pady=2)
         ttk.Label(row_frame, text="快捷键").pack(side="left")
+
         self._hotkey_var = tk.StringVar(
             value=hotkey.get("combination", "ctrl+shift+space")
         )
-        ttk.Entry(row_frame, textvariable=self._hotkey_var, width=25).pack(
-            side="left", padx=(8, 0)
+
+        # 快捷键显示标签（只读展示当前组合键）
+        self._hotkey_display = ttk.Label(
+            row_frame, textvariable=self._hotkey_var,
+            width=22, anchor="center", relief="sunken", padding=(4, 2),
         )
+        self._hotkey_display.pack(side="left", padx=(8, 0))
+
+        # 录制 / 取消 按钮
+        self._record_btn = ttk.Button(
+            row_frame, text="录制", width=5,
+            command=self._start_hotkey_recording,
+        )
+        self._record_btn.pack(side="left", padx=(4, 0))
+
+        # 录制状态标志
+        self._is_recording_hotkey = False
+        self._recording_modifiers = set()
+
         ttk.Label(row_frame, text="(改后需重启)", foreground="#999999").pack(
             side="left", padx=(6, 0)
         )

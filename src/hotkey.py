@@ -41,6 +41,8 @@ def _parse_hotkey_combination(combination_str):
         "cmd": keyboard.Key.cmd,
         "command": keyboard.Key.cmd,
         "super": keyboard.Key.cmd,
+        "win": keyboard.Key.cmd,
+        "windows": keyboard.Key.cmd,
     }
 
     special_key_map = {
