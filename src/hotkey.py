@@ -199,6 +199,7 @@ class HotkeyListener:
             if key == keyboard.Key.esc and self._is_active:
                 self._is_active = False
                 self._trigger_pressed = False
+                self._pressed_modifiers.clear()  # 清除残留的修饰键状态
                 log.info("❌ 按下 Esc — 取消录音")
                 if self.on_cancel:
                     try:

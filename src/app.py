@@ -171,15 +171,16 @@ class AIInputApp:
         热键松开回调 — 停止录音并启动后台处理。
 
         在热键监听线程中调用。
+        先停录音再播提示音，避免 sounddevice 设备冲突。
         """
         if not self._recorder.is_recording:
             return
 
-        # 播放结束提示音
-        play_stop_sound()
-
-        # 停止录音
+        # 先停止录音（释放 sounddevice 设备）
         wav_path = self._recorder.stop()
+
+        # 再播放结束提示音（此时设备已释放，避免冲突）
+        play_stop_sound()
         if not wav_path:
             log.warning("没有有效的录音数据")
             self._tray.set_state(STATE_IDLE)
@@ -199,11 +200,13 @@ class AIInputApp:
 
         与手动松开热键的路径保持一致：播放停止提示音 + 后台线程处理。
         在 Timer 线程中调用，不能直接同步执行 _process_audio（会阻塞 Timer）。
+        注意：此时录音已经停止（由 Recorder 内部处理），sounddevice 设备已释放，
+        可以安全播放提示音。
 
         Args:
             wav_path: 录音文件路径
         """
-        # 播放结束提示音（手动路径也有这步）
+        # 播放结束提示音（录音已停止，设备已释放）
         play_stop_sound()
 
         # 启动后台线程处理（和手动路径一致，不阻塞 Timer 线程）
@@ -261,9 +264,6 @@ class AIInputApp:
                 wav_path, language=self._language
             )
 
-            # 清理临时音频文件
-            cleanup_audio(wav_path)
-
             if not raw_text:
                 log.warning("转写结果为空，跳过")
                 return
@@ -296,6 +296,8 @@ class AIInputApp:
             log.error("处理音频时出错: %s", e)
 
         finally:
+            # 无论成功与否，都清理临时音频文件
+            cleanup_audio(wav_path)
             with self._processing_lock:
                 self._is_processing = False
             # 处理完毕，恢复空闲状态

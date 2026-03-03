@@ -10,7 +10,7 @@
 import threading
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch, PropertyMock, mock_open
 
 import pytest
 
@@ -336,13 +336,7 @@ class TestCreateComponents:
     def test_creates_all_components(self):
         """应该返回 recorder, transcriber, polisher, polish_cfg 四元组。"""
         with patch("src.config.CONFIG_PATH") as mock_path, \
-             patch("builtins.open",
-                   MagicMock(return_value=MagicMock(
-                       __enter__=MagicMock(return_value=MagicMock(
-                           read=MagicMock(return_value="")
-                       )),
-                       __exit__=MagicMock(return_value=False),
-                   ))), \
+             patch("builtins.open", mock_open(read_data="")), \
              patch("src.config.yaml.safe_load", return_value=MOCK_CONFIG), \
              patch("src.config._validate_config"), \
              patch("src.azure_client.AzureOpenAI"):
@@ -364,20 +358,13 @@ class TestCreateComponents:
 
     def test_creates_without_polisher_when_disabled(self):
         """润色关闭时 polisher 应该为 None。"""
-        config_no_polish = MOCK_CONFIG.copy()
         config_no_polish = {
             **MOCK_CONFIG,
             "polish": {"enabled": False, "language": "zh"},
         }
 
         with patch("src.config.CONFIG_PATH") as mock_path, \
-             patch("builtins.open",
-                   MagicMock(return_value=MagicMock(
-                       __enter__=MagicMock(return_value=MagicMock(
-                           read=MagicMock(return_value="")
-                       )),
-                       __exit__=MagicMock(return_value=False),
-                   ))), \
+             patch("builtins.open", mock_open(read_data="")), \
              patch("src.config.yaml.safe_load",
                    return_value=config_no_polish), \
              patch("src.config._validate_config"), \
@@ -427,3 +414,36 @@ class TestProtocolCompliance:
             )
 
         assert isinstance(p, PolisherProtocol)
+
+
+# =============================================================
+# 剪贴板保护测试
+# =============================================================
+
+class TestClipboardProtection:
+    """测试剪贴板备份/恢复机制。"""
+
+    def test_empty_clipboard_skips_restore(self):
+        """原剪贴板为空字符串时（可能是图片），应跳过恢复。"""
+        from src.output import _restore_clipboard
+
+        with patch("src.output.pyperclip.copy") as mock_copy:
+            _restore_clipboard("")
+            # 空字符串不应调用 pyperclip.copy，以保护非文字内容
+            mock_copy.assert_not_called()
+
+    def test_none_clipboard_skips_restore(self):
+        """备份失败（None）时应跳过恢复。"""
+        from src.output import _restore_clipboard
+
+        with patch("src.output.pyperclip.copy") as mock_copy:
+            _restore_clipboard(None)
+            mock_copy.assert_not_called()
+
+    def test_text_clipboard_restores(self):
+        """有文字内容时应正常恢复。"""
+        from src.output import _restore_clipboard
+
+        with patch("src.output.pyperclip.copy") as mock_copy:
+            _restore_clipboard("原来的文字")
+            mock_copy.assert_called_once_with("原来的文字")

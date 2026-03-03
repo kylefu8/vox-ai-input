@@ -104,10 +104,19 @@ def _restore_clipboard(original_content):
     """
     恢复剪贴板为原来的内容。
 
+    如果备份内容为 None（读取失败）或空字符串（可能是非文字内容如图片），
+    则跳过恢复，避免意外清除用户剪贴板中的非文字内容。
+
     Args:
         original_content: 之前备份的剪贴板内容
     """
     if original_content is None:
+        return
+
+    if not original_content:
+        # pyperclip 只能读取文字，非文字内容（如图片）会返回空字符串
+        # 此时写回空字符串会清除原有的非文字内容，所以跳过恢复
+        log.debug("跳过剪贴板恢复（原内容为空，可能是非文字内容）")
         return
 
     try:

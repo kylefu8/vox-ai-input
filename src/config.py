@@ -35,7 +35,8 @@ def load_config():
     if not CONFIG_PATH.exists():
         log.error("找不到配置文件: %s", CONFIG_PATH)
         log.error("请复制 config.example.yaml 为 config.yaml，并填入你的 Azure API 信息：")
-        log.error("  cp config.example.yaml config.yaml")
+        log.error("  macOS/Linux: cp config.example.yaml config.yaml")
+        log.error("  Windows:     copy config.example.yaml config.yaml")
         sys.exit(1)
 
     try:

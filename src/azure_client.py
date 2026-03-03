@@ -18,7 +18,8 @@ def get_azure_client(endpoint, api_key, api_version, timeout=60.0, max_retries=2
     """
     获取一个 AzureOpenAI 客户端实例（同配置复用）。
 
-    相同 endpoint+api_key 的组合会复用已有客户端，避免重复创建。
+    相同 (endpoint, api_key, api_version, timeout, max_retries) 组合
+    会复用已有客户端，避免重复创建。
 
     Args:
         endpoint: Azure OpenAI 服务端点 URL

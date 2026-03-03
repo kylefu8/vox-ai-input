@@ -190,7 +190,7 @@ class TestHotkeyListenerCancel:
         )
 
     def test_esc_during_active_calls_cancel(self):
-        """录音中按 Esc 应该触发 cancel 回调。"""
+        """录音中按 Esc 应该触发 cancel 回调并清除修饰键状态。"""
         # 先激活
         self.listener._on_press(keyboard.Key.ctrl_l)
         self.listener._on_press(keyboard.Key.shift_l)
@@ -200,6 +200,8 @@ class TestHotkeyListenerCancel:
 
         self.on_cancel.assert_called_once()
         self.on_deactivate.assert_not_called()
+        # Esc 应该清除残留的修饰键状态
+        assert len(self.listener._pressed_modifiers) == 0
 
     def test_esc_when_not_active_does_nothing(self):
         """未录音时按 Esc 不应触发任何回调。"""
