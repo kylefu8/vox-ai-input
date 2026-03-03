@@ -8,11 +8,11 @@
 
 同时提供右键菜单，支持退出操作。
 跨平台兼容 macOS 和 Windows。
+
+PIL 和 pystray 均延迟导入，缺少时只降级（不显示图标），不影响核心功能。
 """
 
 import threading
-
-from PIL import Image, ImageDraw
 
 from src.logger import setup_logger
 
@@ -52,7 +52,12 @@ def _create_icon_image(color):
 
     Returns:
         PIL.Image: 生成的图标图像
+
+    Raises:
+        ImportError: 如果 Pillow 未安装
     """
+    from PIL import Image, ImageDraw
+
     image = Image.new("RGBA", (_ICON_SIZE, _ICON_SIZE), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
 
@@ -73,6 +78,7 @@ class TrayIcon:
     系统托盘图标管理器。
 
     在后台线程运行 pystray 事件循环，提供状态切换方法供主控制器调用。
+    如果 Pillow 或 pystray 未安装，所有方法静默降级为空操作。
     """
 
     def __init__(self, on_quit=None):
@@ -86,18 +92,29 @@ class TrayIcon:
         self._icon = None
         self._thread = None
         self._current_state = STATE_IDLE
+        self._available = True  # Pillow/pystray 是否可用
 
-        # 预生成所有状态的图标缓存
+        # 尝试预生成所有状态的图标缓存
         self._icon_cache = {}
-        for state, cfg in _STATE_CONFIG.items():
-            self._icon_cache[state] = _create_icon_image(cfg["color"])
+        try:
+            for state, cfg in _STATE_CONFIG.items():
+                self._icon_cache[state] = _create_icon_image(cfg["color"])
+        except ImportError:
+            log.warning("Pillow 未安装，系统托盘图标不可用（不影响核心功能）")
+            self._available = False
+        except Exception as e:
+            log.warning("生成托盘图标失败: %s（不影响核心功能）", e)
+            self._available = False
 
     def start(self):
         """
         在后台线程中启动托盘图标。
 
-        不阻塞调用线程。
+        不阻塞调用线程。如果 Pillow/pystray 不可用则静默跳过。
         """
+        if not self._available:
+            return
+
         try:
             import pystray
 
@@ -130,6 +147,9 @@ class TrayIcon:
 
             log.debug("系统托盘图标已启动")
 
+        except ImportError:
+            log.warning("pystray 未安装，系统托盘图标不可用（不影响核心功能）")
+            self._available = False
         except Exception as e:
             log.warning("系统托盘图标启动失败（不影响核心功能）: %s", e)
 
@@ -157,7 +177,7 @@ class TrayIcon:
 
         try:
             if self._icon:
-                self._icon.icon = self._icon_cache[state]
+                self._icon.icon = self._icon_cache.get(state)
                 self._icon.title = _STATE_CONFIG[state]["title"]
         except Exception as e:
             # 托盘更新失败不应影响核心功能

@@ -148,10 +148,11 @@ class AIInputApp:
 
         在热键监听线程中调用。
         """
-        # 如果正在处理上一条语音，跳过
-        if self._is_processing:
-            log.warning("上一条语音还在处理中，请稍候...")
-            return
+        # 如果正在处理上一条语音，跳过（加锁读取，避免竞态）
+        with self._processing_lock:
+            if self._is_processing:
+                log.warning("上一条语音还在处理中，请稍候...")
+                return
 
         # 更新托盘状态为录音中
         self._tray.set_state(STATE_RECORDING)
@@ -160,7 +161,7 @@ class AIInputApp:
         play_start_sound()
 
         # 开始录音（设置自动停止回调）
-        if not self._recorder.start(on_auto_stop=self._process_audio):
+        if not self._recorder.start(on_auto_stop=self._on_auto_stop):
             # 录音启动失败，恢复空闲状态
             log.error("录音启动失败，请检查麦克风")
             self._tray.set_state(STATE_IDLE)
@@ -185,6 +186,27 @@ class AIInputApp:
             return
 
         # 启动后台线程处理（不阻塞热键监听）
+        thread = threading.Thread(
+            target=self._process_audio,
+            args=(wav_path,),
+            daemon=True,
+        )
+        thread.start()
+
+    def _on_auto_stop(self, wav_path):
+        """
+        录音达到最大时长自动停止时的回调。
+
+        与手动松开热键的路径保持一致：播放停止提示音 + 后台线程处理。
+        在 Timer 线程中调用，不能直接同步执行 _process_audio（会阻塞 Timer）。
+
+        Args:
+            wav_path: 录音文件路径
+        """
+        # 播放结束提示音（手动路径也有这步）
+        play_stop_sound()
+
+        # 启动后台线程处理（和手动路径一致，不阻塞 Timer 线程）
         thread = threading.Thread(
             target=self._process_audio,
             args=(wav_path,),

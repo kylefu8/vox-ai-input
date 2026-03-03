@@ -65,14 +65,14 @@ class TestParseHotkeyCombination:
         assert keyboard.Key.shift in modifiers
 
     def test_invalid_key_falls_back_to_space(self):
-        """无效的触发键时，应降级为 Space。"""
-        modifiers, trigger = _parse_hotkey_combination("ctrl+unknownkey")
+        """含无法识别的按键时（有有效触发键），无效部分被忽略。"""
+        modifiers, trigger = _parse_hotkey_combination("ctrl+unknownkey+space")
         assert trigger == keyboard.Key.space
 
-    def test_no_trigger_key_defaults_space(self):
-        """只有修饰键没有触发键时，应降级为 Space。"""
-        modifiers, trigger = _parse_hotkey_combination("ctrl+shift")
-        assert trigger == keyboard.Key.space
+    def test_no_trigger_key_raises_error(self):
+        """只有修饰键没有触发键时，应该抛出 ValueError。"""
+        with pytest.raises(ValueError, match="快捷键配置无效"):
+            _parse_hotkey_combination("ctrl+shift")
 
 
 class TestHotkeyListenerMatchKey:

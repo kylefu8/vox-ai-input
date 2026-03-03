@@ -17,7 +17,6 @@ log = setup_logger(__name__)
 # 项目根目录（config.py 所在的 src/ 的上一级）
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = PROJECT_ROOT / "config.yaml"
-CONFIG_EXAMPLE_PATH = PROJECT_ROOT / "config.example.yaml"
 
 
 def load_config():
@@ -56,6 +55,13 @@ def load_config():
     return config
 
 
+# config.example.yaml 中已知的占位符值，精确匹配避免误判
+_PLACEHOLDER_VALUES = {
+    "https://your-resource.openai.azure.com/",
+    "your-api-key-here",
+}
+
+
 def _validate_config(config):
     """
     验证配置字典中的必要字段是否存在且不为空。
@@ -81,7 +87,8 @@ def _validate_config(config):
                 sys.exit(1)
             value = value[key]
 
-        if not value or str(value).strip() == "" or "your-" in str(value):
+        str_value = str(value).strip()
+        if not value or str_value == "" or str_value in _PLACEHOLDER_VALUES:
             log.error("配置未填写: %s — 请在 config.yaml 中填入实际值", field_name)
             sys.exit(1)
 

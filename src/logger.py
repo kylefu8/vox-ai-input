@@ -17,7 +17,7 @@ def _get_log_level():
     """
     从环境变量获取日志级别，默认 INFO。
 
-    支持: DEBUG, INFO, WARNING, ERROR
+    支持: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
     Returns:
         int: logging 级别常量
@@ -29,6 +29,7 @@ def _get_log_level():
         "WARNING": logging.WARNING,
         "WARN": logging.WARNING,
         "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
     }
     return level_map.get(level_str, logging.INFO)
 
@@ -54,6 +55,9 @@ def setup_logger(name, level=None):
         return logger
 
     logger.setLevel(level)
+
+    # 禁止向父 logger 传播，避免在 pytest 等环境中日志双重输出
+    logger.propagate = False
 
     # 控制台输出 handler
     console_handler = logging.StreamHandler(sys.stdout)

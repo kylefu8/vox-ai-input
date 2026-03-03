@@ -54,7 +54,7 @@ class TestValidateConfig:
             _validate_config(config)
 
     def test_placeholder_value_exits(self):
-        """占位符值（含 your-）应该被检测出来并退出。"""
+        """占位符值应该被检测出来并退出。"""
         config = {
             "azure": {
                 "endpoint": "https://your-resource.openai.azure.com/",

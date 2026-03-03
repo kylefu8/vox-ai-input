@@ -46,7 +46,12 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 
 # 4. 配置 Azure API
+# macOS / Linux
 cp config.example.yaml config.yaml
+
+# Windows (PowerShell)
+Copy-Item config.example.yaml config.yaml
+
 # 编辑 config.yaml，填入你的 Azure 端点和 API Key
 ```
 

@@ -80,8 +80,10 @@ def _parse_hotkey_combination(combination_str):
 
     if trigger is None:
         log.error("快捷键配置无效: '%s'，未找到触发键", combination_str)
-        # 使用默认的 Space 作为触发键
-        trigger = keyboard.Key.space
+        raise ValueError(
+            f"快捷键配置无效: '{combination_str}'，"
+            "请在 config.yaml 中设置正确的 hotkey.combination"
+        )
 
     return modifiers, trigger
 
