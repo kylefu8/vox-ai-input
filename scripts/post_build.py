@@ -2,9 +2,13 @@
 构建后处理脚本
 
 在 PyInstaller --onedir 构建完成后运行，生成增量更新包：
-1. 从 dist/VoxAIInput/_internal/ 中提取"我们的代码"部分
-2. 打包为 app-update.zip（~100-200KB）
-3. 生成 update-manifest.json（版本号 + SHA256 + 文件列表）
+1. 打包源代码文件 + 资源为 app-update.zip
+2. 生成 update-manifest.json（版本号 + SHA256）
+
+增量更新原理：
+    PyInstaller --onedir 模式下，_internal/ 中的 PYZ 存档包含所有 .pyc。
+    增量更新时，直接用新的 PYZ 和相关文件覆盖 _internal/ 即可。
+    所以 app-update.zip 包含 _internal/ 中除 Python 运行时和第三方库之外的文件。
 
 用法:
     pyinstaller build.spec --clean --noconfirm
@@ -32,13 +36,15 @@ INTERNAL_DIR = DIST_DIR / "_internal"
 # 发布产物目录
 RELEASE_DIR = PROJECT_ROOT / "release"
 
-# 属于"我们的代码"的文件/目录模式（相对于 _internal/）
-# 这些是增量更新时需要替换的文件
-APP_PATTERNS = [
-    "run.pyc",              # 主入口编译文件
-    "src/**",               # 我们的所有源码模块
-    "assets/**",            # 资源文件（提示音等）
-    "config.example.yaml",  # 配置模板
+# 属于"我们的代码"的文件/目录
+# 在 PyInstaller --onedir 中，这些文件在 _internal/ 下
+# PYZ-00.pyz 包含了所有编译过的 .py 模块
+OUR_PATTERNS = [
+    # PyInstaller 核心产物（包含编译的 Python 代码）
+    "base_library.zip",
+    # 数据文件（assets/ 和配置模板）
+    "assets/",
+    "config.example.yaml",
 ]
 
 
@@ -47,7 +53,6 @@ def _get_version():
     run_py = PROJECT_ROOT / "run.py"
     for line in run_py.read_text(encoding="utf-8").splitlines():
         if line.startswith("__version__"):
-            # __version__ = "0.1.0"
             return line.split("=")[1].strip().strip('"').strip("'")
     return "0.0.0"
 
@@ -61,42 +66,53 @@ def _sha256_file(path):
     return h.hexdigest()
 
 
-def _collect_app_files():
+def _collect_update_files():
     """
-    收集属于"我们的代码"的文件列表。
+    收集增量更新包的文件。
+
+    包含 _internal/ 中与我们的代码相关的文件。
+    排除 Python 运行时 DLL 和第三方 .pyd 文件（这些很少变化且体积大）。
 
     Returns:
-        list[Path]: 文件路径列表（相对于 _internal/）
+        list[tuple[Path, str]]: [(绝对路径, zip内相对路径), ...]
     """
     files = []
 
-    # src/ 目录下所有文件
-    src_dir = INTERNAL_DIR / "src"
-    if src_dir.exists():
-        for f in src_dir.rglob("*"):
-            if f.is_file():
-                files.append(f.relative_to(INTERNAL_DIR))
+    if not INTERNAL_DIR.exists():
+        print(f"警告: _internal 目录不存在: {INTERNAL_DIR}")
+        return files
 
-    # assets/ 目录下所有文件
+    # 收集 assets/ 目录
     assets_dir = INTERNAL_DIR / "assets"
     if assets_dir.exists():
         for f in assets_dir.rglob("*"):
             if f.is_file():
-                files.append(f.relative_to(INTERNAL_DIR))
+                rel = f.relative_to(INTERNAL_DIR)
+                files.append((f, str(rel)))
 
-    # _internal 根目录下的特定文件
-    for name in ["config.example.yaml"]:
-        p = INTERNAL_DIR / name
-        if p.exists():
-            files.append(Path(name))
+    # 收集 config.example.yaml
+    cfg = INTERNAL_DIR / "config.example.yaml"
+    if cfg.exists():
+        files.append((cfg, "config.example.yaml"))
 
-    # run.pyc（可能在 _internal/ 根目录或其他位置）
-    # PyInstaller --onedir 会把入口脚本编译后放在 _internal/ 下
-    for f in INTERNAL_DIR.glob("run*"):
-        if f.is_file() and f.suffix in (".pyc", ".py"):
-            files.append(f.relative_to(INTERNAL_DIR))
+    # 收集 PYZ 存档（包含所有编译的 Python 模块）
+    for pyz in INTERNAL_DIR.glob("*.pyz"):
+        files.append((pyz, pyz.name))
 
-    return sorted(set(files))
+    # 收集 base_library.zip
+    base_lib = INTERNAL_DIR / "base_library.zip"
+    if base_lib.exists():
+        files.append((base_lib, "base_library.zip"))
+
+    # 如果有独立的 src/ 目录（某些 PyInstaller 配置会展开）
+    src_dir = INTERNAL_DIR / "src"
+    if src_dir.exists():
+        for f in src_dir.rglob("*"):
+            if f.is_file():
+                rel = f.relative_to(INTERNAL_DIR)
+                files.append((f, str(rel)))
+
+    return files
 
 
 def main():
@@ -105,45 +121,49 @@ def main():
     print("Vox AI Input — 构建后处理")
     print("=" * 50)
 
-    # 检查构建目录
     if not DIST_DIR.exists():
         print(f"错误: 构建目录不存在: {DIST_DIR}")
         print("请先运行: pyinstaller build.spec --clean --noconfirm")
         sys.exit(1)
 
-    if not INTERNAL_DIR.exists():
-        print(f"错误: _internal 目录不存在: {INTERNAL_DIR}")
-        sys.exit(1)
-
     version = _get_version()
     print(f"版本: v{version}")
-
-    # 收集应用文件
-    app_files = _collect_app_files()
-    if not app_files:
-        print("警告: 没有找到应用文件，跳过增量包生成")
-        return
-
-    print(f"应用文件数: {len(app_files)}")
-    for f in app_files:
-        print(f"  {f}")
 
     # 创建 release 目录
     RELEASE_DIR.mkdir(exist_ok=True)
 
-    # 1. 生成 app-update.zip
+    # 收集文件
+    update_files = _collect_update_files()
+
+    if not update_files:
+        print("警告: 未找到增量更新文件，仅生成清单")
+        # 即使没有增量文件也不报错，CI 可以只发布安装包
+        manifest = {"version": version, "assets": {}, "files": {}}
+        manifest_path = RELEASE_DIR / "update-manifest.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        print(f"清单: {manifest_path}")
+        return
+
+    print(f"增量更新文件数: {len(update_files)}")
+    total_size = 0
+    for abs_path, rel_path in update_files:
+        size = abs_path.stat().st_size
+        total_size += size
+        print(f"  {rel_path}  ({size // 1024} KB)")
+    print(f"  总计: {total_size // 1024} KB（压缩前）")
+
+    # 生成 app-update.zip
     zip_path = RELEASE_DIR / "app-update.zip"
     print(f"\n生成增量更新包: {zip_path}")
 
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
-        for rel_path in app_files:
-            full_path = INTERNAL_DIR / rel_path
-            zf.write(full_path, str(rel_path))
+        for abs_path, rel_path in update_files:
+            zf.write(abs_path, rel_path)
 
     zip_size = zip_path.stat().st_size
-    print(f"  大小: {zip_size / 1024:.1f} KB")
+    print(f"  压缩后: {zip_size // 1024} KB")
 
-    # 2. 生成 update-manifest.json
+    # 生成 update-manifest.json
     manifest = {
         "version": version,
         "assets": {
@@ -155,12 +175,10 @@ def main():
         "files": {},
     }
 
-    # 记录每个文件的哈希（用于未来更细粒度的增量）
-    for rel_path in app_files:
-        full_path = INTERNAL_DIR / rel_path
-        manifest["files"][str(rel_path)] = {
-            "size": full_path.stat().st_size,
-            "sha256": _sha256_file(full_path),
+    for abs_path, rel_path in update_files:
+        manifest["files"][rel_path] = {
+            "size": abs_path.stat().st_size,
+            "sha256": _sha256_file(abs_path),
         }
 
     manifest_path = RELEASE_DIR / "update-manifest.json"
@@ -170,14 +188,12 @@ def main():
     )
     print(f"清单: {manifest_path}")
 
-    # 3. 复制 config.example.yaml 到 release/（安装包需要）
+    # 复制 config.example.yaml
     example_cfg = PROJECT_ROOT / "config.example.yaml"
     if example_cfg.exists():
         shutil.copy2(example_cfg, RELEASE_DIR / "config.example.yaml")
 
     print(f"\n完成！产物在 {RELEASE_DIR}/")
-    print(f"  app-update.zip        ({zip_size / 1024:.1f} KB) — 增量更新包")
-    print(f"  update-manifest.json  — 更新清单")
 
 
 if __name__ == "__main__":
