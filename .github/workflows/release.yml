@@ -59,15 +59,22 @@ jobs:
 
       # 7. 生成增量更新包 + 清单
       - name: Generate app-update.zip
-        run: python scripts/post_build.py
+        shell: pwsh
+        run: |
+          Write-Host "=== dist/VoxAIInput/ contents ==="
+          Get-ChildItem "dist/VoxAIInput" -Recurse | Select-Object -First 40 | ForEach-Object { Write-Host "  $($_.FullName.Replace((Get-Location).Path + '\', ''))" }
+          Write-Host ""
+          python scripts/post_build.py
 
       # 8. 更新 installer.iss 中的版本号
       - name: Update installer version
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.VERSION }}"
-          (Get-Content installer.iss) -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$version`"" |
-            Set-Content installer.iss
+          $content = Get-Content installer.iss -Raw
+          $content = $content -replace '#define MyAppVersion "[\d.]+"', ('#define MyAppVersion "' + $version + '"')
+          Set-Content installer.iss -Value $content
+          Write-Host "Updated installer.iss to version $version"
 
       # 9. 安装 Inno Setup 并构建安装包
       - name: Install Inno Setup

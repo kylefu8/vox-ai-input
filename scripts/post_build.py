@@ -126,6 +126,21 @@ def main():
         print("请先运行: pyinstaller build.spec --clean --noconfirm")
         sys.exit(1)
 
+    # 打印目录结构帮助调试
+    print(f"DIST_DIR: {DIST_DIR}")
+    print(f"INTERNAL_DIR: {INTERNAL_DIR}  exists={INTERNAL_DIR.exists()}")
+    if DIST_DIR.exists():
+        print("dist/VoxAIInput/ 顶层文件:")
+        for f in sorted(DIST_DIR.iterdir()):
+            tag = "DIR " if f.is_dir() else "FILE"
+            print(f"  [{tag}] {f.name}")
+    if INTERNAL_DIR.exists():
+        print("_internal/ 顶层文件/目录:")
+        for f in sorted(INTERNAL_DIR.iterdir()):
+            tag = "DIR " if f.is_dir() else "FILE"
+            size = f.stat().st_size if f.is_file() else 0
+            print(f"  [{tag}] {f.name}  ({size // 1024} KB)" if f.is_file() else f"  [{tag}] {f.name}/")
+
     version = _get_version()
     print(f"版本: v{version}")
 
