@@ -4,6 +4,8 @@ Azure OpenAI 客户端工厂
 提供共享的 AzureOpenAI 客户端实例，避免 Transcriber 和 Polisher 各自重复创建。
 """
 
+import hashlib
+
 from openai import AzureOpenAI
 
 from src.logger import setup_logger
@@ -31,7 +33,9 @@ def get_azure_client(endpoint, api_key, api_version, timeout=60.0, max_retries=0
     Returns:
         AzureOpenAI 客户端实例
     """
-    cache_key = (endpoint, api_key, api_version, timeout, max_retries)
+    # 对 api_key 取哈希后作为缓存 key，避免明文常驻内存
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
+    cache_key = (endpoint, key_hash, api_version, timeout, max_retries)
 
     if cache_key in _client_cache:
         log.debug("复用已有的 Azure OpenAI 客户端")

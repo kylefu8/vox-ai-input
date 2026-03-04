@@ -10,6 +10,7 @@
 
 import logging
 import os
+import platform
 import sys
 
 
@@ -60,7 +61,20 @@ def setup_logger(name, level=None):
     logger.propagate = False
 
     # 控制台输出 handler
-    console_handler = logging.StreamHandler(sys.stdout)
+    # Windows 旧版终端（cmd.exe / PowerShell 5）默认编码为 GBK，
+    # 遇到 Emoji 会抛出 UnicodeEncodeError。这里显式设置 UTF-8 + errors="replace"
+    # 保证日志不会因为编码问题导致程序崩溃。
+    if platform.system() == "Windows":
+        try:
+            stream = open(sys.stdout.fileno(), mode="w",
+                          encoding="utf-8", errors="replace",
+                          closefd=False)
+        except Exception:
+            stream = sys.stdout
+    else:
+        stream = sys.stdout
+
+    console_handler = logging.StreamHandler(stream)
     console_handler.setLevel(level)
 
     # 日志格式：时间 | 级别 | 模块名 | 消息

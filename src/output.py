@@ -9,6 +9,7 @@
 """
 
 import platform
+import sys
 import threading
 import time
 
@@ -25,6 +26,23 @@ _keyboard_controller = None
 # 粘贴时序常量（秒），可根据不同系统/应用微调
 _CLIPBOARD_WRITE_DELAY = 0.05   # 写入剪贴板后等待，确保系统同步
 _PASTE_RESTORE_DELAY = 0.3      # 粘贴后等待，确保目标应用接收完成再恢复剪贴板
+
+# 在模块加载时检测 pyperclip 后端，提前警告潜在的中文乱码问题
+def _check_pyperclip_backend():
+    """检测 pyperclip 剪贴板后端，在 Windows 无 pywin32 时警告可能的中文乱码。"""
+    if platform.system() != "Windows":
+        return
+    try:
+        import win32clipboard  # noqa: F401
+    except ImportError:
+        # pywin32 未安装，pyperclip 会退化为 clip.exe，可能导致中文乱码
+        log.warning(
+            "pywin32 未安装，pyperclip 将使用 clip.exe 操作剪贴板\n"
+            "  在部分 Windows 区域设置下可能导致中文乱码\n"
+            "  建议执行: pip install pywin32"
+        )
+
+_check_pyperclip_backend()
 
 
 def _get_controller():
@@ -175,5 +193,11 @@ def _simulate_paste():
 
     except Exception as e:
         log.error("模拟粘贴键失败: %s", e)
-        log.error("请确保已在系统设置中授权辅助功能权限")
+        if system == "Windows":
+            log.error(
+                "如果目标窗口以管理员权限运行，请以管理员身份启动 Vox AI Input\n"
+                "  或将配置中 output.paste_method 改为 'clipboard'，然后手动 Ctrl+V 粘贴"
+            )
+        else:
+            log.error("请确保已在系统设置中授权辅助功能权限")
         raise

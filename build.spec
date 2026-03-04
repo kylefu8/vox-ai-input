@@ -7,7 +7,11 @@ Vox AI Input — PyInstaller 打包配置
     pyinstaller build.spec --clean --noconfirm
 
 输出:
-    dist/VoxAIInput.exe（单文件，无控制台窗口）
+    dist/VoxAIInput/（目录模式，含 VoxAIInput.exe + _internal/）
+
+    后续步骤:
+    1. python scripts/post_build.py  — 生成 app-update.zip + update-manifest.json
+    2. iscc installer.iss            — 生成 Inno Setup 安装包
 """
 
 from PyInstaller.utils.hooks import collect_submodules
@@ -55,22 +59,31 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# --onedir 模式：exe + _internal/ 目录
+# 相比 --onefile：启动更快（不需解压），支持增量更新
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,  # 关键：binaries/datas 放到 COLLECT 中
     name="VoxAIInput",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,  # 不使用 UPX 压缩（避免杀毒软件误报）
-    runtime_tmpdir=None,
-    console=False,  # 无控制台窗口（通过系统托盘运行）
+    upx=False,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    name="VoxAIInput",
 )

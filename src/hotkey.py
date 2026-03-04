@@ -6,6 +6,7 @@
 """
 
 import platform
+import sys
 import threading
 
 from pynput import keyboard
@@ -72,6 +73,13 @@ def _parse_hotkey_combination(combination_str):
     for part in parts:
         if part in modifier_map:
             modifiers.add(modifier_map[part])
+            # Windows 上 cmd/command/super 映射为 Win 键，会触发开始菜单
+            if part in ("cmd", "command", "super") and platform.system() == "Windows":
+                log.warning(
+                    "Windows 上 '%s' 映射为 Windows 徽标键，"
+                    "可能触发开始菜单。建议改用 ctrl/alt/shift",
+                    part,
+                )
         elif part in special_key_map:
             trigger = special_key_map[part]
         elif len(part) == 1:
@@ -142,6 +150,12 @@ class HotkeyListener:
         system = platform.system()
         if system == "Darwin":
             log.info("macOS 提示: 请确保终端/Python 已在 系统设置 > 隐私与安全 > 辅助功能 中获得授权")
+        elif system == "Windows":
+            log.info(
+                "Windows 提示: 若热键无响应，请尝试以管理员身份运行本程序\n"
+                "  部分杀毒软件/企业组策略可能拦截全局键盘钩子\n"
+                "  如遍历 Windows Defender / 360 等报警，请允许本程序访问键盘"
+            )
 
         log.info("开始监听全局热键... 按 Ctrl+C 退出")
 

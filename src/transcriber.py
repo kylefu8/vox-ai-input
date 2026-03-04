@@ -23,17 +23,31 @@ def cleanup_audio(audio_path):
     删除临时音频文件（模块级工具函数）。
 
     可从任何地方调用，不再绑定到 Transcriber 实例。
+    Windows 下文件可能被占用而删除失败，会重试一次。
 
     Args:
         audio_path: 要删除的音频文件路径
     """
-    try:
-        path = Path(audio_path)
-        if path.exists():
+    import time as _time
+
+    path = Path(audio_path)
+    if not path.exists():
+        return
+
+    for attempt in range(2):
+        try:
             path.unlink()
             log.debug("已清理临时音频文件: %s", path.name)
-    except OSError as e:
-        log.warning("清理音频文件失败（不影响使用）: %s", e)
+            return
+        except PermissionError:
+            # Windows 文件独占锁，等待后重试
+            if attempt == 0:
+                _time.sleep(0.5)
+        except OSError as e:
+            log.warning("清理音频文件失败（不影响使用）: %s", e)
+            return
+
+    log.warning("清理音频文件失败（文件可能被占用）: %s", path.name)
 
 
 class Transcriber:

@@ -11,6 +11,8 @@ from src.logger import setup_logger
 
 log = setup_logger("main")
 
+__version__ = "0.0.2"
+
 
 def _create_components():
     """
@@ -186,7 +188,35 @@ def main():
         python run.py             # 正常模式（隐藏控制台，托盘运行）
         python run.py --test      # 测试模式（按回车控制录音）
         python run.py --visible   # 正常模式但保留控制台窗口（调试用）
+        python run.py --setup     # 打开配置向导 Web UI
+        python run.py --version   # 显示版本号
     """
+    if "--version" in sys.argv:
+        print(f"Vox AI Input v{__version__}")
+        sys.exit(0)
+
+    if "--setup" in sys.argv:
+        from src.setup_ui import run_setup
+        run_setup()
+        sys.exit(0)
+
+    # 首次启动检测：若 config.yaml 不存在，自动开启配置向导而非直接退出
+    from src.paths import get_project_root
+    config_path = get_project_root() / "config.yaml"
+    if not config_path.exists():
+        log.warning("未找到 config.yaml，正在启动配置向导...")
+        try:
+            from src.setup_ui import run_setup
+            run_setup()
+        except Exception as e:
+            log.error("配置向导启动失败: %s", e)
+        # 配置向导结束后重新检查
+        if not config_path.exists():
+            log.error("配置文件仍未创建，无法启动。")
+            log.error("请复制 config.example.yaml 为 config.yaml 并填入 Azure API 信息")
+            sys.exit(1)
+        log.info("配置文件已创建，继续启动...")
+
     if "--test" in sys.argv:
         run_test_mode()
     elif "--visible" in sys.argv:

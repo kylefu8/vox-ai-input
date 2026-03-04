@@ -1,6 +1,6 @@
 """配置向导 Web UI — python run.py --setup 启动"""
 
-import json, os, pathlib, threading, webbrowser, urllib.request, urllib.parse
+import json, os, pathlib, secrets, threading, webbrowser, urllib.request, urllib.parse
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 from src.paths import get_project_root
@@ -8,6 +8,9 @@ from src.paths import get_project_root
 _PROJECT_ROOT = get_project_root()
 _CONFIG_PATH = _PROJECT_ROOT / "config.yaml"
 _PORT = 8765
+
+# 安全 token：每次启动生成一个随机 token，防止同一机器上其他进程未授权访问 API
+_SETUP_TOKEN = secrets.token_urlsafe(24)
 
 # ---------------------------------------------------------------------------
 # HTML (single-page, embedded)
@@ -191,12 +194,35 @@ class _Handler(BaseHTTPRequestHandler):
         pass  # suppress logs
 
     def do_GET(self):
+        # 验证 token（防止未授权访问）
+        parsed = urllib.parse.urlparse(self.path)
+        params = urllib.parse.parse_qs(parsed.query)
+        token = params.get("token", [""])[0]
+        if token != _SETUP_TOKEN:
+            self.send_error(403, "Forbidden: invalid or missing token")
+            return
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
-        self.wfile.write(_HTML.encode())
+        # 将 token 注入到 HTML 的 JS 中，供后续 API 调用使用
+        html_with_token = _HTML.replace(
+            "const $=id=>document.getElementById(id);",
+            f"const _TOKEN='{_SETUP_TOKEN}';\nconst $=id=>document.getElementById(id);",
+        )
+        # 在 fetch 中添加 token header
+        html_with_token = html_with_token.replace(
+            "headers:{'Content-Type':'application/json'}",
+            "headers:{'Content-Type':'application/json','X-Setup-Token':_TOKEN}",
+        )
+        self.wfile.write(html_with_token.encode())
 
     def do_POST(self):
+        # 验证 token
+        token = self.headers.get("X-Setup-Token", "")
+        if token != _SETUP_TOKEN:
+            self._send_json({"ok": False, "error": "Forbidden: invalid token"})
+            return
+
         length = int(self.headers.get("Content-Length", 0))
         body = json.loads(self.rfile.read(length)) if length else {}
         path = self.path
@@ -361,7 +387,8 @@ def run_setup():
     """Launch the setup Web UI."""
     server = HTTPServer(("127.0.0.1", _PORT), _Handler)
     _Handler.server_instance = server
-    url = f"http://127.0.0.1:{_PORT}"
+    # URL 包含安全 token，只有通过此 URL 才能访问配置 API
+    url = f"http://127.0.0.1:{_PORT}?token={_SETUP_TOKEN}"
     print(f"🔧 配置向导已启动: {url}")
     threading.Timer(0.5, lambda: webbrowser.open(url)).start()
     try:

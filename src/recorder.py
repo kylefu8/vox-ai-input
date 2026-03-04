@@ -5,6 +5,7 @@
 录音数据暂存在内存中，停止后保存为临时 WAV 文件供后续 API 调用使用。
 """
 
+import platform
 import tempfile
 import threading
 from pathlib import Path
@@ -16,6 +17,176 @@ import soundfile as sf
 from src.logger import setup_logger
 
 log = setup_logger(__name__)
+
+
+def _find_usable_input_device():
+    """
+    查找一个可用的音频输入设备。
+
+    在 Windows 上，优先使用 WASAPI/MME/DirectSound（高层 API）的设备，
+    因为 WDM-KS（低层内核驱动）虽然能枚举硬件但常常无法打开流。
+
+    Returns:
+        tuple[int, dict] | None: (设备索引, 设备信息字典)，找不到返回 None
+    """
+    try:
+        devices = sd.query_devices()
+        hostapis = sd.query_hostapis()
+    except Exception as e:
+        log.debug("查询音频设备失败: %s", e)
+        return None
+
+    # 按 hostapi 优先级排序输入设备：WASAPI > DirectSound > MME > WDM-KS
+    # WDM-KS 设备在 RDP 等场景下虽能枚举但无法打开
+    HIGH_LEVEL_APIS = {"Windows WASAPI", "Windows DirectSound", "MME"}
+
+    high_level_inputs = []  # 高层 API 设备（可靠）
+    low_level_inputs = []   # WDM-KS 等低层设备（不一定可用）
+
+    for i, d in enumerate(devices):
+        if d.get("max_input_channels", 0) <= 0:
+            continue
+        api_name = hostapis[d["hostapi"]]["name"] if d["hostapi"] < len(hostapis) else ""
+        if api_name in HIGH_LEVEL_APIS:
+            high_level_inputs.append((i, d))
+        else:
+            low_level_inputs.append((i, d))
+
+    # 从可靠列表中挑选：优先麦克风、排除虚拟设备
+    for candidates in (high_level_inputs, low_level_inputs):
+        best = _pick_best_mic(candidates)
+        if best is not None:
+            return best
+
+    return None
+
+
+def _pick_best_mic(candidates):
+    """
+    从候选设备列表中挑选最佳麦克风。
+
+    优先级：名字含"麦克风/mic/microphone" > 非虚拟设备 > 第一个设备
+
+    Args:
+        candidates: list of (index, device_dict)
+
+    Returns:
+        tuple[int, dict] | None
+    """
+    if not candidates:
+        return None
+
+    best = None
+    for idx, d in candidates:
+        name_lower = d["name"].lower()
+        # 跳过虚拟/混音设备
+        if any(kw in name_lower for kw in ("stereo mix", "立体声混音", "loopback")):
+            continue
+        # 优先麦克风
+        if any(kw in name_lower for kw in ("麦克风", "mic", "microphone")):
+            return (idx, d)
+        if best is None:
+            best = (idx, d)
+
+    return best if best is not None else (candidates[0] if candidates else None)
+
+
+def check_audio_input():
+    """
+    检查系统是否有可用的音频输入设备（麦克风）。
+
+    启动时调用一次：
+    - 没有任何输入设备 → 提示并退出
+    - 有默认设备 → 打印设备名继续
+    - 无默认设备但有高层 API 设备 → 自动选择并设为默认
+    - 只有 WDM-KS 设备（典型 RDP 场景）→ 提示用户开启麦克风重定向
+
+    Raises:
+        SystemExit: 当没有可用的音频输入设备时
+    """
+    try:
+        devices = sd.query_devices()
+    except Exception as e:
+        log.error("无法查询音频设备: %s", e)
+        log.error("请检查系统音频驱动是否正常安装")
+        raise SystemExit(1)
+
+    input_devices = [
+        (i, d) for i, d in enumerate(devices)
+        if d.get("max_input_channels", 0) > 0
+    ]
+
+    if not input_devices:
+        log.error("未检测到任何音频输入设备（麦克风）")
+        log.error("请连接麦克风后重新启动程序")
+        raise SystemExit(1)
+
+    # 检查是否有默认输入设备
+    try:
+        default_idx = sd.default.device[0]
+        if default_idx >= 0:
+            default_dev = devices[default_idx]
+            if default_dev.get("max_input_channels", 0) > 0:
+                log.info("检测到默认麦克风: [%d] %s", default_idx, default_dev["name"])
+                return
+    except Exception:
+        pass
+
+    # 无默认设备 → 尝试自动选择
+    chosen = _find_usable_input_device()
+
+    if chosen is None:
+        # 所有设备都在 WDM-KS 上？很可能是 RDP 场景
+        _print_rdp_hint(input_devices)
+        raise SystemExit(1)
+
+    chosen_idx, chosen_dev = chosen
+
+    # 检查设备所在的 hostapi 是否为 WDM-KS（不可靠）
+    try:
+        hostapis = sd.query_hostapis()
+        api_name = hostapis[chosen_dev["hostapi"]]["name"]
+        if "WDM-KS" in api_name:
+            # WDM-KS 设备不可靠，很可能是 RDP
+            _print_rdp_hint(input_devices)
+            raise SystemExit(1)
+    except (IndexError, KeyError):
+        pass
+
+    sd.default.device = (chosen_idx, sd.default.device[1])
+    log.info(
+        "未检测到默认麦克风，已自动选择: [%d] %s",
+        chosen_idx, chosen_dev["name"],
+    )
+
+
+def _print_rdp_hint(input_devices):
+    """打印 RDP 麦克风重定向提示信息。"""
+    log.error("=" * 55)
+    log.error("未找到可用的麦克风！")
+    log.error("")
+    log.error("检测到你可能正在使用远程桌面 (RDP) 连接。")
+    log.error("RDP 默认不转发本地麦克风，需要手动开启：")
+    log.error("")
+    log.error("  1. 打开「远程桌面连接」(mstsc)")
+    log.error("  2. 点击「显示选项」→「本地资源」选项卡")
+    log.error("  3. 远程音频 → 点击「设置」")
+    log.error("  4. 远程音频录制 → 选择「从此计算机录制」")
+    log.error("  5. 确定后重新连接")
+    log.error("")
+    log.error("如果你在电脑前（非 RDP），请检查：")
+    log.error("  - Windows 声音设置中麦克风是否被禁用")
+    log.error("  - 设备管理器中音频驱动是否正常")
+    log.error("=" * 55)
+    if input_devices:
+        log.debug("系统枚举到以下输入设备（均不可用）：")
+        for idx, d in input_devices:
+            try:
+                hostapis = sd.query_hostapis()
+                api = hostapis[d["hostapi"]]["name"]
+            except Exception:
+                api = "?"
+            log.debug("  [%d] %s (%s)", idx, d["name"], api)
 
 
 class Recorder:
@@ -51,20 +222,25 @@ class Recorder:
 
         # 自动停止定时器
         self._auto_stop_timer = None
+        # 倒计时提醒定时器
+        self._countdown_timer = None
         # 当录音自动停止时的回调函数
         self._on_auto_stop = None
+        # 倒计时开始时的回调函数
+        self._on_countdown = None
 
     @property
     def is_recording(self):
         """当前是否正在录音。"""
         return self._is_recording
 
-    def start(self, on_auto_stop=None):
+    def start(self, on_auto_stop=None, on_countdown=None):
         """
         开始录音。
 
         Args:
             on_auto_stop: 可选回调函数，当录音达到最大时长自动停止时调用
+            on_countdown: 可选回调函数(seconds)，倒计时开始时调用
 
         Returns:
             bool: 是否成功开始录音
@@ -78,6 +254,7 @@ class Recorder:
                 # 清空之前的录音数据
                 self._audio_chunks = []
                 self._on_auto_stop = on_auto_stop
+                self._on_countdown = on_countdown
 
                 # 创建音频输入流（回调模式）
                 self._stream = sd.InputStream(
@@ -96,6 +273,17 @@ class Recorder:
                 self._auto_stop_timer.daemon = True
                 self._auto_stop_timer.start()
 
+                # 设置倒计时提醒定时器（最后 5 秒触发）
+                countdown_secs = 5
+                countdown_delay = self.max_duration - countdown_secs
+                if countdown_delay > 0 and self._on_countdown:
+                    self._countdown_timer = threading.Timer(
+                        countdown_delay,
+                        lambda: self._on_countdown(countdown_secs),
+                    )
+                    self._countdown_timer.daemon = True
+                    self._countdown_timer.start()
+
                 log.info("🎤 开始录音（采样率: %d Hz，最长: %d 秒）",
                           self.sample_rate, self.max_duration)
                 return True
@@ -103,6 +291,15 @@ class Recorder:
             except sd.PortAudioError as e:
                 log.error("无法访问麦克风: %s", e)
                 log.error("请检查系统是否已授权麦克风访问权限")
+                # 输出设备诊断信息，帮助用户排查问题
+                try:
+                    devices = sd.query_devices()
+                    log.error("可用音频设备:")
+                    for i, d in enumerate(devices):
+                        if d["max_input_channels"] > 0:
+                            log.error("  [%d] %s", i, d["name"])
+                except Exception:
+                    pass
                 self._is_recording = False
                 return False
             except Exception as e:
@@ -132,6 +329,11 @@ class Recorder:
             if self._auto_stop_timer:
                 self._auto_stop_timer.cancel()
                 self._auto_stop_timer = None
+
+            # 取消倒计时定时器
+            if self._countdown_timer:
+                self._countdown_timer.cancel()
+                self._countdown_timer = None
 
             # 停止并关闭音频流
             try:

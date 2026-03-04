@@ -3,14 +3,24 @@
 
 统一处理 PyInstaller 打包（frozen）和普通 Python 脚本两种运行模式下的路径差异。
 
-PyInstaller --onefile 模式下：
-- sys.executable → exe 自身路径（如 C:/Users/.../VoxAIInput.exe）
-- sys._MEIPASS → 临时解压目录（只读，存放 bundle 内的资源文件）
-- __file__ → 指向临时解压目录内的 .pyc，不能用来定位用户文件
+PyInstaller --onedir 模式下：
+- sys.executable → exe 路径（如 C:/Program Files/VoxAIInput/VoxAIInput.exe）
+- sys._MEIPASS → _internal 目录（存放依赖和资源，等同于 exe 旁边的 _internal/）
+- __file__ → 指向 _internal 目录内的 .pyc
+
+目录结构（安装后）：
+    VoxAIInput/
+    ├── VoxAIInput.exe
+    ├── _internal/          ← sys._MEIPASS
+    │   ├── src/
+    │   ├── assets/sounds/
+    │   └── ...
+    ├── config.yaml         ← 用户文件
+    └── config.example.yaml
 
 所以需要两个路径函数：
-- get_project_root(): 用于定位 config.yaml 等用户文件（在 exe 旁边）
-- get_resource_dir(): 用于定位 assets/sounds 等只读资源（在 bundle 内部）
+- get_project_root(): 用于定位 config.yaml 等用户文件（exe 所在目录）
+- get_resource_dir(): 用于定位 assets/sounds 等只读资源（_internal 目录）
 """
 
 import sys
@@ -28,7 +38,7 @@ def get_project_root():
         Path: 项目根目录
     """
     if getattr(sys, "frozen", False):
-        # PyInstaller 打包模式：exe 所在目录
+        # PyInstaller --onedir：exe 所在目录
         return Path(sys.executable).parent
     # 普通脚本模式：paths.py 所在的 src/ 的上一级
     return Path(__file__).resolve().parent.parent
@@ -38,17 +48,30 @@ def get_resource_dir():
     """
     获取资源文件目录（用于定位只读资源）。
 
-    - 打包模式: sys._MEIPASS（PyInstaller 临时解压目录）
+    - 打包模式: sys._MEIPASS（--onedir 下即 _internal 目录）
     - 脚本模式: 代码根目录
 
     Returns:
         Path: 资源文件根目录
     """
     if getattr(sys, "frozen", False):
-        # PyInstaller 打包模式：临时解压目录
         return Path(sys._MEIPASS)
-    # 普通脚本模式：和 get_project_root() 一致
     return Path(__file__).resolve().parent.parent
+
+
+def get_internal_dir():
+    """
+    获取 _internal 目录（用于增量更新时定位需替换的文件）。
+
+    - 打包模式: sys._MEIPASS
+    - 脚本模式: 返回 None（源码不适用）
+
+    Returns:
+        Path | None
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS)
+    return None
 
 
 def is_frozen():

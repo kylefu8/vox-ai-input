@@ -27,6 +27,11 @@ def load_config():
 
     从项目根目录的 config.yaml 读取配置。
     如果文件不存在，打印提示信息并退出程序。
+    支持通过环境变量覆盖 Azure API 配置，避免在文件中存当敏感信息。
+
+    环境变量优先级高于 config.yaml：
+    - AZURE_OPENAI_ENDPOINT  → azure.endpoint
+    - AZURE_OPENAI_API_KEY   → azure.api_key
 
     Returns:
         dict: 包含所有配置项的字典
@@ -50,6 +55,18 @@ def load_config():
     except OSError as e:
         log.error("无法读取配置文件: %s", e)
         sys.exit(1)
+
+    # 环境变量覆盖：优先级高于配置文件，适合 CI/CD 和安全敏感场景
+    import os
+    azure = config.setdefault("azure", {})
+    env_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+    env_api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+    if env_endpoint:
+        azure["endpoint"] = env_endpoint
+        log.info("使用环境变量 AZURE_OPENAI_ENDPOINT 覆盖配置")
+    if env_api_key:
+        azure["api_key"] = env_api_key
+        log.info("使用环境变量 AZURE_OPENAI_API_KEY 覆盖配置")
 
     # 验证必要的配置项是否存在
     _validate_config(config)
@@ -201,10 +218,12 @@ def get_polish_config(config):
         config: 完整的配置字典
 
     Returns:
-        dict: 包含 enabled, language
+        dict: 包含 enabled, language, system_prompt, translate_to
     """
     polish = config.get("polish", {})
     return {
         "enabled": polish.get("enabled", True),
         "language": polish.get("language", "zh"),
+        "system_prompt": polish.get("system_prompt", ""),
+        "translate_to": polish.get("translate_to", ""),
     }

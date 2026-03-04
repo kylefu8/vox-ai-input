@@ -32,6 +32,12 @@ nul
 *.tmp
 *.log
 
+# ========== 构建产物 ==========
+release/
+
+# ========== Claude 记忆文件（本地开发用） ==========
+.claude/
+
 # ========== 内部开发文件（不发布） ==========
 WINDOWS_COMPAT_PLAN.md
 init_claude_code.py
