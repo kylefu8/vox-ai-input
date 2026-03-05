@@ -110,12 +110,16 @@ class LogWindow:
             root = tk.Tk()
             root.title("Vox AI Input — 日志")
             root.geometry("860x480")
-            root.configure(bg="#1E1E1E")
+            root.configure(bg="#1A1B2E")
 
-            # 窗口图标（可选）
+            # 窗口图标
             try:
-                if platform.system() == "Windows":
-                    root.iconbitmap(default="")
+                from src.paths import get_resource_dir, get_project_root
+                for base in [get_resource_dir(), get_project_root()]:
+                    ico = base / "assets" / "icon.ico"
+                    if ico.exists():
+                        root.iconbitmap(str(ico))
+                        break
             except Exception:
                 pass
 
@@ -127,7 +131,7 @@ class LogWindow:
             mono_font = tkfont.Font(family="Consolas", size=10)
 
             # 主框架
-            frame = tk.Frame(root, bg="#1E1E1E")
+            frame = tk.Frame(root, bg="#1A1B2E")
             frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
 
             # 文本控件 + 滚动条
@@ -136,7 +140,7 @@ class LogWindow:
 
             text = tk.Text(
                 frame,
-                bg="#1E1E1E",
+                bg="#1A1B2E",
                 fg="#D4D4D4",
                 font=mono_font,
                 wrap=tk.WORD,
@@ -158,14 +162,14 @@ class LogWindow:
                 text.tag_configure(level, foreground=color)
 
             # 底部状态栏
-            status_frame = tk.Frame(root, bg="#2D2D2D", height=24)
+            status_frame = tk.Frame(root, bg="#252842", height=24)
             status_frame.pack(fill=tk.X, side=tk.BOTTOM)
 
             line_count_var = tk.StringVar(master=root, value="0 行")
             status_label = tk.Label(
                 status_frame,
                 textvariable=line_count_var,
-                bg="#2D2D2D",
+                bg="#252842",
                 fg="#888888",
                 font=("Segoe UI", 9),
                 padx=8,

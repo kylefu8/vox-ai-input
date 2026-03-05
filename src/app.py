@@ -99,6 +99,7 @@ class AIInputApp:
                         deployment=azure_cfg["gpt_deployment"],
                         system_prompt=polish_cfg.get("system_prompt", "") or None,
                         translate_to=polish_cfg.get("translate_to", ""),
+                        show_original=polish_cfg.get("show_original", False),
                     )
             except Exception as e:
                 log.warning("初始化 API 客户端失败（请通过设置窗口配置 API）: %s", e)
@@ -607,6 +608,7 @@ class AIInputApp:
                     deployment=azure_cfg["gpt_deployment"],
                     system_prompt=polish_cfg.get("system_prompt", "") or None,
                     translate_to=polish_cfg.get("translate_to", ""),
+                    show_original=polish_cfg.get("show_original", False),
                 )
             else:
                 self._polisher = None

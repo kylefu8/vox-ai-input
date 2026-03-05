@@ -26,22 +26,43 @@ log = setup_logger(__name__)
 
 _settings_open = False
 
-# ==================== Catppuccin Latte-Dark 色系 ====================
-_C = {
-    "bg": "#282A36",
-    "surface": "#343746",
-    "border": "#4A4D5E",
-    "text": "#E2E4F0",
-    "text2": "#9499B0",
-    "accent": "#8BE9FD",
-    "green": "#50FA7B",
-    "red": "#FF5555",
-    "yellow": "#F1FA8C",
-    "orange": "#FFB86C",
-    "btn": "#4E5166",
-    "btn_h": "#626580",
-    "entry": "#3C3F52",
+# ==================== 主题定义 ====================
+_THEMES = {
+    "dark": {
+        "bg": "#1A1B2E",
+        "surface": "#252842",
+        "border": "#3D4166",
+        "text": "#E8ECF4",
+        "text2": "#8B92B0",
+        "accent": "#7C6AEF",
+        "green": "#4ADE80",
+        "red": "#F87171",
+        "yellow": "#FBBF24",
+        "orange": "#FB923C",
+        "btn": "#353960",
+        "btn_h": "#454A78",
+        "entry": "#2A2D4A",
+    },
+    "light": {
+        "bg": "#F8F9FC",
+        "surface": "#FFFFFF",
+        "border": "#E2E8F0",
+        "text": "#1E293B",
+        "text2": "#64748B",
+        "accent": "#6D5CE7",
+        "green": "#22C55E",
+        "red": "#EF4444",
+        "yellow": "#EAB308",
+        "orange": "#F97316",
+        "btn": "#E2E8F0",
+        "btn_h": "#CBD5E1",
+        "entry": "#F1F5F9",
+    },
 }
+
+# 当前主题（默认深色）
+_current_theme = "dark"
+_C = _THEMES[_current_theme].copy()
 
 # ==================== 快捷键常量 ====================
 _KEYSYM_MOD = {
@@ -137,29 +158,49 @@ class SettingsWindow:
         self._root.configure(bg=_C["bg"])
         self._root.resizable(False, False)
         self._root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._root.minsize(520, 0)
         self._root.withdraw()
+
+        # 设置窗口图标
+        self._set_window_icon(self._root)
 
         m = tk.Frame(self._root, bg=_C["bg"], padx=24, pady=20)
         m.pack(fill="both", expand=True)
+        self._rebuild_content(m)
+
+        self._root.update_idletasks()
+        self._center_window()
+        self._root.deiconify()
+
+    def _rebuild_content(self, m):
+        """构建窗口内容（主题切换时可重建）。"""
 
         # ---- 标题 ----
         hdr = tk.Frame(m, bg=_C["bg"])
         hdr.pack(fill="x", pady=(0, 16))
 
+        # 左侧：标题 + 版本
         from run import __version__
-        tk.Label(hdr, text="Vox AI Input", bg=_C["bg"], fg=_C["text"],
+        left = tk.Frame(hdr, bg=_C["bg"])
+        left.pack(side="left")
+        tk.Label(left, text="Vox AI Input", bg=_C["bg"], fg=_C["text"],
                  font=("Segoe UI Black", 18)).pack(side="left")
-        tk.Label(hdr, text=f"v{__version__}", bg=_C["bg"], fg=_C["text2"],
+        tk.Label(left, text=f"v{__version__}", bg=_C["bg"], fg=_C["text2"],
                  font=("Segoe UI", 11)).pack(side="left", padx=(10, 0), pady=(6, 0))
 
-        # 右侧：项目介绍 + 链接
-        right_info = tk.Frame(hdr, bg=_C["bg"])
-        right_info.pack(side="right")
-        tk.Label(right_info, text="AI 语音输入法 · 说话即打字",
-                 bg=_C["bg"], fg=_C["text2"], font=("Segoe UI", 9)).pack(anchor="e")
-        link = tk.Label(right_info, text="github.com/kylefu8/vox-ai-input",
+        # 右侧：介绍 + 链接 + 主题切换
+        right = tk.Frame(hdr, bg=_C["bg"])
+        right.pack(side="right")
+
+        _btn(right, "🎨", self._toggle_theme, w=2).pack(side="right", anchor="n", padx=(8, 0), pady=(2, 0))
+
+        info_f = tk.Frame(right, bg=_C["bg"])
+        info_f.pack(side="right")
+        tk.Label(info_f, text="AI 语音输入法 · 说话即打字",
+                 bg=_C["bg"], fg=_C["text2"], font=("Segoe UI", 9), anchor="e").pack(anchor="e")
+        link = tk.Label(info_f, text="github.com/kylefu8/vox-ai-input",
                         bg=_C["bg"], fg=_C["accent"], font=("Segoe UI", 9),
-                        cursor="hand2")
+                        cursor="hand2", anchor="e")
         link.pack(anchor="e")
         link.bind("<Button-1>", lambda e: __import__("webbrowser").open(
             "https://github.com/kylefu8/vox-ai-input"))
@@ -193,35 +234,10 @@ class SettingsWindow:
         c1.pack(fill="x", pady=(0, 12))
         az = self._config.get("azure", {})
 
-        for i, (label, key, show) in enumerate([
-            ("端点 URL", "endpoint", ""),
-            ("API Key", "api_key", "●"),
-            ("转写模型", "whisper_deployment", ""),
-            ("润色模型", "gpt_deployment", ""),
-        ]):
-            _lbl(c1, label).grid(row=i, column=0, sticky="w", pady=3)
-            var = tk.StringVar(master=self._root, value=az.get(key, ""))
-            setattr(self, f"_{key.replace('_', '')}_var" if 'deploy' not in key else f"_{'whisper' if 'whisper' in key else 'gpt'}_var", var)
-            e = _entry(c1, var=var, w=40, show=show)
-            e.grid(row=i, column=1, sticky="ew", pady=3, padx=(10, 0))
-            if key == "api_key":
-                self._endpoint_var = getattr(self, "_endpointvar", None)  # fix below
-                self._apikey_var = var
-                self._apikey_entry = e
-                self._show_key = False
-                eye = _btn(c1, "👁", self._toggle_api_key, w=3)
-                eye.grid(row=i, column=2, padx=(4, 0))
-
-        # Fix variable references for the loop above
         self._endpoint_var = tk.StringVar(master=self._root, value=az.get("endpoint", ""))
         self._apikey_var = tk.StringVar(master=self._root, value=az.get("api_key", ""))
         self._whisper_var = tk.StringVar(master=self._root, value=az.get("whisper_deployment", ""))
         self._gpt_var = tk.StringVar(master=self._root, value=az.get("gpt_deployment", ""))
-
-        # Rebuild API card properly (the loop approach was flawed)
-        c1.destroy()
-        c1 = _card(m)
-        c1.pack(fill="x", pady=(0, 12), after=m.winfo_children()[1])
 
         rows = [
             ("端点 URL", self._endpoint_var, ""),
@@ -292,6 +308,19 @@ class SettingsWindow:
         cb.bind("<<ComboboxSelected>>", self._on_translate_changed)
         _lbl(r2, "语音输入后自动翻译", font_size=9).pack(side="left", padx=(10, 0))
 
+        # 显示原文
+        r2b = tk.Frame(c2, bg=_C["surface"])
+        r2b.pack(fill="x", pady=2)
+        self._show_original_var = tk.BooleanVar(
+            master=self._root, value=po.get("show_original", False))
+        self._show_original_cb = tk.Checkbutton(
+            r2b, text="翻译时同时输出原文", variable=self._show_original_var,
+            bg=_C["surface"], fg=_C["text"], selectcolor=_C["entry"],
+            activebackground=_C["surface"], activeforeground=_C["text"],
+            font=("Segoe UI", 10), command=self._on_translate_changed,
+        )
+        self._show_original_cb.pack(side="left", padx=(20, 0))
+
         # 开机自启
         if get_autostart_supported():
             r3 = tk.Frame(c2, bg=_C["surface"])
@@ -322,10 +351,6 @@ class SettingsWindow:
         bb.pack(fill="x", pady=(16, 0))
         _btn(bb, "取消", self._on_close, w=10).pack(side="right", padx=(8, 0))
         _btn(bb, "保存", self._on_save_click, accent=True, w=10).pack(side="right")
-
-        self._root.update_idletasks()
-        self._center_window()
-        self._root.deiconify()
 
     # ==================== 高级设置 ====================
 
@@ -363,7 +388,8 @@ class SettingsWindow:
         from src.polisher import POLISH_SYSTEM_PROMPT, build_prompt
         saved = po.get("system_prompt", "") or ""
         tl_code = po.get("translate_to", "")
-        display = build_prompt(saved, tl_code)
+        show_orig = po.get("show_original", False)
+        display = build_prompt(saved, tl_code, show_orig)
         self._prompt_text = tk.Text(
             f, width=38, height=8, wrap=tk.WORD,
             bg=_C["entry"], fg=_C["text"], insertbackground=_C["accent"],
@@ -398,15 +424,23 @@ class SettingsWindow:
             if lb == self._translate_var.get():
                 code = cd
                 break
+        show_orig = self._show_original_var.get()
         cur = self._prompt_text.get("1.0", "end-1c").strip()
         base = self._strip_translate_suffix(cur)
         self._prompt_text.delete("1.0", "end")
-        self._prompt_text.insert("1.0", build_prompt(base, code))
+        self._prompt_text.insert("1.0", build_prompt(base, code, show_orig))
 
     @staticmethod
     def _strip_translate_suffix(p):
+        """去掉 prompt 末尾的所有翻译指令（支持所有历史格式）。"""
         import re
-        return re.sub(r"\n\n最后，将润色后的文字翻译为.+。只输出翻译结果，不要输出原文。$", "", p).strip()
+        # 当前格式：「=== 翻译指令...」
+        p = re.sub(r"\n\n=== 翻译指令.+", "", p, flags=re.DOTALL).strip()
+        # 旧格式：「重要指令：完成润色后...」
+        p = re.sub(r"\n\n重要指令：完成润色后.+", "", p, flags=re.DOTALL).strip()
+        # 更旧格式：「最后，将润色后的文字翻译为...」
+        p = re.sub(r"\n\n最后，将润色后的文字翻译为.+", "", p, flags=re.DOTALL).strip()
+        return p
 
     # ==================== API Key ====================
 
@@ -456,7 +490,7 @@ class SettingsWindow:
             self._hotkey_var.set(combo)
             self._stop_hotkey_recording()
             if combo.lower() in _RESERVED:
-                messagebox.showwarning("快捷键冲突", f"「{combo}」是常用系统快捷键，可能冲突。", parent=self._root)
+                self._msg("warning", "快捷键冲突", f"「{combo}」是常用系统快捷键，可能冲突。")
         return "break"
 
     def _on_kr(self, event):
@@ -476,7 +510,7 @@ class SettingsWindow:
         try:
             cfg = self._collect_config()
         except ValueError as e:
-            messagebox.showerror("输入错误", str(e), parent=self._root)
+            self._msg("error", "输入错误", str(e))
             return
         if self._autostart_var is not None:
             try:
@@ -487,12 +521,12 @@ class SettingsWindow:
             try:
                 ok, msg = self._on_save(cfg)
                 if ok:
-                    messagebox.showinfo("保存成功", "配置已保存并立即生效。", parent=self._root)
+                    self._msg("info", "保存成功", "配置已保存并立即生效。")
                     self._on_close()
                 else:
-                    messagebox.showerror("保存失败", msg or "未知错误", parent=self._root)
+                    self._msg("error", "保存失败", msg or "未知错误")
             except Exception as e:
-                messagebox.showerror("保存失败", f"出错: {e}", parent=self._root)
+                self._msg("error", "保存失败", f"出错: {e}")
         else:
             self._on_close()
 
@@ -544,9 +578,103 @@ class SettingsWindow:
                 tl = cd
                 break
         p["translate_to"] = tl
+        p["show_original"] = self._show_original_var.get()
         return c
 
     # ==================== 窗口管理 ====================
+
+    @staticmethod
+    def _set_window_icon(window):
+        """为窗口设置程序图标。"""
+        try:
+            from src.paths import get_resource_dir, get_project_root
+            import os
+            # 优先用 ico，回退用 png
+            for base in [get_resource_dir(), get_project_root()]:
+                ico = base / "assets" / "icon.ico"
+                if ico.exists():
+                    window.iconbitmap(str(ico))
+                    return
+                png = base / "assets" / "icon.png"
+                if png.exists():
+                    from PIL import ImageTk, Image
+                    icon_img = ImageTk.PhotoImage(Image.open(str(png)))
+                    window.iconphoto(True, icon_img)
+                    window._icon_ref = icon_img  # 防 GC
+                    return
+        except Exception:
+            pass
+
+    def _msg(self, msg_type, title, message):
+        """
+        显示自定义深色弹窗，居中于设置窗口。
+
+        Args:
+            msg_type: "info" / "error" / "warning"
+            title: 标题
+            message: 内容
+        """
+        icons = {"info": "✅", "error": "❌", "warning": "⚠️"}
+        colors = {"info": _C["accent"], "error": _C["red"], "warning": _C["yellow"]}
+        icon = icons.get(msg_type, "ℹ️")
+        clr = colors.get(msg_type, _C["accent"])
+
+        dlg = tk.Toplevel(self._root)
+        dlg.title(title)
+        dlg.configure(bg=_C["bg"])
+        dlg.resizable(False, False)
+        dlg.transient(self._root)
+        dlg.grab_set()
+        self._set_window_icon(dlg)
+
+        f = tk.Frame(dlg, bg=_C["bg"], padx=30, pady=20)
+        f.pack()
+
+        tk.Label(f, text=icon, bg=_C["bg"], font=("Segoe UI", 28)).pack(pady=(0, 8))
+        tk.Label(f, text=title, bg=_C["bg"], fg=clr, font=("Segoe UI Semibold", 13)).pack()
+        tk.Label(f, text=message, bg=_C["bg"], fg=_C["text"], font=("Segoe UI", 10),
+                 wraplength=280, justify="center").pack(pady=(8, 16))
+        _btn(f, "确定", lambda: dlg.destroy(), accent=True, w=12).pack()
+
+        # 居中于父窗口
+        dlg.update_idletasks()
+        dw, dh = dlg.winfo_reqwidth(), dlg.winfo_reqheight()
+        px, py = self._root.winfo_x(), self._root.winfo_y()
+        pw, ph = self._root.winfo_width(), self._root.winfo_height()
+        x = px + (pw - dw) // 2
+        y = py + (ph - dh) // 2
+        dlg.geometry(f"+{x}+{y}")
+
+        dlg.wait_window()
+
+    def _toggle_theme(self):
+        """切换深色/浅色主题，重建窗口内容。"""
+        global _current_theme, _C
+        _current_theme = "light" if _current_theme == "dark" else "dark"
+        _C.update(_THEMES[_current_theme])
+
+        x, y = self._root.winfo_x(), self._root.winfo_y()
+        was_advanced = self._advanced_visible
+
+        for widget in self._root.winfo_children():
+            widget.destroy()
+
+        self._root.configure(bg=_C["bg"])
+        self._advanced_visible = False
+
+        m = tk.Frame(self._root, bg=_C["bg"], padx=24, pady=20)
+        m.pack(fill="both", expand=True)
+        self._rebuild_content(m)
+
+        if was_advanced:
+            self._advanced_visible = True
+            self._toggle_btn.config(text="▼  高级设置")
+            self._adv_card.pack(fill="x", pady=(0, 8), after=self._toggle_btn)
+
+        self._root.update_idletasks()
+        w = self._root.winfo_reqwidth()
+        h = self._root.winfo_reqheight()
+        self._root.geometry(f"{w}x{h}+{x}+{y}")
 
     def _center_window(self):
         """首次打开时居中。"""

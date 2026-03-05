@@ -13,22 +13,23 @@ from src.logger import setup_logger
 
 log = setup_logger(__name__)
 
-# 润色的系统提示词
-POLISH_SYSTEM_PROMPT = """你是一个语音输入后处理助手。对语音转写的文字进行最小化润色：
+# 润色的系统提示词（多语言通用）
+POLISH_SYSTEM_PROMPT = """你是一个语音输入后处理助手。对语音转写的文字进行最小化润色，保持原文的语言不变：
 1. 保留原意，不增删实质内容
-2. 补充标点符号
-3. 纠正语音识别导致的错别字（同音字等）
-4. 去除口语填充词（嗯、那个、就是说）
-5. 保留中英文混合：英文单词、品牌名、技术术语保持英文原样
-6. 口述的符号名称转为实际符号，例如：
+2. 保持原文的语言（英文输入输出英文，中文输入输出中文，其他语言同理）
+3. 补充标点符号
+4. 纠正语音识别导致的错误（同音字、拼写错误等）
+5. 去除口语填充词（如中文的"嗯、那个、就是说"，英文的"um, uh, you know, like"等）
+6. 保留混合语言中的外语词汇：品牌名、技术术语、人名保持原样
+7. 口述的符号名称转为实际符号，例如：
    - "at" 或 "艾特" → @
-   - "井号" → #
-   - "斜杠" → /
-   - "点" 在邮箱或网址语境中 → .
-   - "下划线" → _
-   - "百分号" → %
-7. 不要过度正式化，不添加额外信息
-8. 原文已经很好则原样返回
+   - "hashtag" 或 "井号" → #
+   - "slash" 或 "斜杠" → /
+   - "dot" 或 "点"（在邮箱/网址语境中）→ .
+   - "underscore" 或 "下划线" → _
+8. 不要过度正式化，不添加额外信息
+9. 不要将原文翻译成其他语言
+10. 原文已经很好则原样返回
 只输出润色后的纯文本。"""
 
 # 支持的翻译语言映射
@@ -39,13 +40,14 @@ TRANSLATE_LANGUAGES = {
 }
 
 
-def build_prompt(base_prompt="", translate_to=""):
+def build_prompt(base_prompt="", translate_to="", show_original=False):
     """
     组合最终的 system prompt。
 
     Args:
         base_prompt: 基础润色提示词，空=用默认
         translate_to: 翻译目标语言代码，空=不翻译
+        show_original: 翻译时是否同时输出原文
 
     Returns:
         str: 完整的 system prompt
@@ -54,7 +56,27 @@ def build_prompt(base_prompt="", translate_to=""):
 
     if translate_to and translate_to in TRANSLATE_LANGUAGES:
         lang_name = TRANSLATE_LANGUAGES[translate_to]
-        prompt += f"\n\n最后，将润色后的文字翻译为{lang_name}。只输出翻译结果，不要输出原文。"
+        if show_original:
+            prompt += (
+                f"\n\n=== 翻译指令（必须严格遵守）==="
+                f"\n步骤1: 先对原文进行润色（保持原文的语言不变）"
+                f"\n步骤2: 将润色后的原文翻译为{lang_name}"
+                f"\n步骤3: 按以下格式输出，不要添加任何标签或序号："
+                f"\n"
+                f"\n润色后的原文（保持原始语言）"
+                f"\n"
+                f"\n{lang_name}翻译"
+                f"\n"
+                f"\n两段之间用一个空行分隔。禁止添加「原文：」「翻译：」等前缀。"
+            )
+        else:
+            prompt += (
+                f"\n\n=== 翻译指令（必须严格遵守）==="
+                f"\n步骤1: 先对原文进行润色"
+                f"\n步骤2: 将润色结果翻译为{lang_name}"
+                f"\n步骤3: 只输出{lang_name}翻译结果"
+                f"\n禁止输出润色后的原文。禁止输出任何解释。只输出纯{lang_name}文本。"
+            )
 
     return prompt
 
@@ -67,7 +89,7 @@ class Polisher:
     使用 Azure OpenAI 的 GPT-4o-mini 对语音转写文字进行润色。
     """
 
-    def __init__(self, endpoint, api_key, api_version, deployment, system_prompt=None, translate_to=""):
+    def __init__(self, endpoint, api_key, api_version, deployment, system_prompt=None, translate_to="", show_original=False):
         """
         初始化润色器。
 
@@ -78,9 +100,10 @@ class Polisher:
             deployment: GPT 模型的部署名称
             system_prompt: 自定义基础提示词，留空用默认
             translate_to: 翻译目标语言代码，空=不翻译
+            show_original: 翻译时是否同时输出原文
         """
         self.deployment = deployment
-        self.system_prompt = build_prompt(system_prompt or "", translate_to)
+        self.system_prompt = build_prompt(system_prompt or "", translate_to, show_original)
 
         # 获取共享的 Azure OpenAI 客户端
         # 与 Transcriber 使用相同参数，确保复用同一个客户端和 TCP 连接池

@@ -231,4 +231,5 @@ def get_polish_config(config):
         "language": polish.get("language", "zh"),
         "system_prompt": polish.get("system_prompt", ""),
         "translate_to": polish.get("translate_to", ""),
+        "show_original": polish.get("show_original", False),
     }

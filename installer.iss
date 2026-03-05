@@ -13,7 +13,7 @@
 #define MyAppURL "https://github.com/kylefu8/vox-ai-input"
 
 ; 从 run.py 读取版本号（简化：硬编码，CI 中动态替换）
-#define MyAppVersion "0.0.3"
+#define MyAppVersion "0.0.4"
 
 [Setup]
 AppId={{A7E3F2B1-8C4D-4E5F-9A6B-1C2D3E4F5A6B}
