@@ -22,7 +22,7 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}/issues
-DefaultDirName={autopf}\VoxAIInput
+DefaultDirName={userpf}\VoxAIInput
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=release
@@ -30,7 +30,7 @@ OutputBaseFilename=VoxAIInput-Setup-{#MyAppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
 ; 安装时关闭正在运行的实例
 CloseApplications=yes
 CloseApplicationsFilter=VoxAIInput.exe
