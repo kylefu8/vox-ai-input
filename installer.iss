@@ -23,6 +23,7 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}/issues
 DefaultDirName={userpf}\VoxAIInput
+SetupIconFile=assets\icon.ico
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=release

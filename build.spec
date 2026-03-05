@@ -39,6 +39,8 @@ a = Analysis(
     datas=[
         # 提示音资源（只读，打包到 bundle 内部）
         ("assets/sounds/*.wav", "assets/sounds"),
+        # 图标
+        ("assets/icon.png", "assets"),
         # 配置模板（供用户复制）
         ("config.example.yaml", "."),
     ],
@@ -77,6 +79,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon="assets/icon.ico",
 )
 
 coll = COLLECT(
