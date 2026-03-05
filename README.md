@@ -5,7 +5,7 @@
 > 🎤 说话 → 🤖 AI 转写 → ✨ AI 润色 → 🌐 翻译（可选）→ 📋 自动粘贴
 
 支持中英文混合识别、口述符号自动转换（如"艾特" → @），AI 自动修正标点和语法，可选实时翻译到 9 种语言。
-
+> **当前版本专为 [Azure AI Foundry](https://ai.azure.com/) 上部署的 `gpt-4o-mini-transcribe`（语音转写）和 `gpt-4o-mini`（文字润色）模型优化。后续版本将支持更多模型和提供商（OpenAI 直连、本地 Whisper 等）。**
 ## 功能特性
 
 - **一键语音输入** — 长按快捷键说话，松开自动输出到当前应用
@@ -26,7 +26,9 @@
 ## 环境要求
 
 - **Windows** 10/11 (x86_64)
-- **Azure OpenAI** 已部署语音转写模型（如 `gpt-4o-mini-transcribe`）和 GPT 模型（如 `gpt-4o-mini`）
+- **[Azure AI Foundry](https://ai.azure.com/)** 已部署以下模型：
+  - `gpt-4o-mini-transcribe` — 语音转写
+  - `gpt-4o-mini` — 文字润色 + 翻译
 - **麦克风** 系统已授权访问
 
 ## 快速开始
@@ -200,8 +202,8 @@ pyinstaller build.spec --clean --noconfirm
 ## 技术栈
 
 - **语言**: Python 3.10+
-- **语音转写**: Azure OpenAI (gpt-4o-mini-transcribe / Whisper)
-- **文字润色 + 翻译**: Azure OpenAI (GPT-4o-mini)
+- **语音转写**: Azure AI Foundry (gpt-4o-mini-transcribe)
+- **文字润色 + 翻译**: Azure AI Foundry (gpt-4o-mini)
 - **热键监听**: pynput
 - **录音**: sounddevice + soundfile
 - **UI**: tkinter（深色主题设置窗口 + 日志窗口）+ pystray（系统托盘）

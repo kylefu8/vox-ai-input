@@ -4,9 +4,13 @@ AI 语音输入法 — 说话即打字
 
 ## 技术栈
 - Python 3.10+
-- Azure OpenAI (gpt-4o-mini-transcribe + gpt-4o-mini)
+- Azure AI Foundry (gpt-4o-mini-transcribe + gpt-4o-mini)
 - sounddevice / soundfile / pynput / pystray / tkinter / Pillow
 - PyInstaller (--onedir) + Inno Setup + GitHub Actions CI/CD
+
+## 模型支持
+- 当前版本专为 Azure AI Foundry 上 gpt-4o-mini-transcribe + gpt-4o-mini 优化
+- 后续计划支持: OpenAI 直连 / 本地 Whisper / 更多模型
 
 ## 跨平台约束
 - 本项目在 macOS ARM64 和 Windows x86_64 上交替开发
