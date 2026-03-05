@@ -1,9 +1,12 @@
-# AI-Input
+# Vox AI Input
 
-AI输入法
+AI 语音输入法 — 说话即打字
 
 ## 技术栈
-- [待补充：语言/框架/主要依赖]
+- Python 3.10+
+- Azure OpenAI (gpt-4o-mini-transcribe + gpt-4o-mini)
+- sounddevice / soundfile / pynput / pystray / tkinter / Pillow
+- PyInstaller (--onedir) + Inno Setup + GitHub Actions CI/CD
 
 ## 跨平台约束
 - 本项目在 macOS ARM64 和 Windows x86_64 上交替开发
