@@ -180,6 +180,60 @@ def run_app(hide_console=True):
         sys.exit(0)
 
 
+def _acquire_single_instance_lock():
+    """
+    获取单实例锁，防止程序重复运行。
+
+    Windows: 使用命名 Mutex（内核对象，进程退出自动释放）
+    其他平台: 使用 lockfile（PID 文件）
+
+    Returns:
+        bool: 是否成功获取锁（True=可以运行，False=已有实例在运行）
+    """
+    import platform
+
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+            # 创建命名 Mutex，名称全局唯一
+            mutex = ctypes.windll.kernel32.CreateMutexW(None, True, "VoxAIInput_SingleInstance_Mutex")
+            last_error = ctypes.windll.kernel32.GetLastError()
+            # ERROR_ALREADY_EXISTS = 183
+            if last_error == 183:
+                ctypes.windll.kernel32.CloseHandle(mutex)
+                return False
+            # 保持 mutex 引用，避免被 GC 回收导致锁释放
+            import builtins
+            builtins._vox_mutex = mutex
+            return True
+        except Exception as e:
+            log.debug("Mutex 创建失败，跳过单实例检测: %s", e)
+            return True
+    else:
+        # macOS / Linux: PID 文件锁
+        import tempfile
+        import os
+        lock_path = os.path.join(tempfile.gettempdir(), "vox-ai-input.lock")
+        try:
+            if os.path.exists(lock_path):
+                with open(lock_path, "r") as f:
+                    old_pid = int(f.read().strip())
+                # 检查进程是否还在运行
+                try:
+                    os.kill(old_pid, 0)
+                    return False  # 进程还在
+                except OSError:
+                    pass  # 进程已退出，锁文件是残留的
+            with open(lock_path, "w") as f:
+                f.write(str(os.getpid()))
+            import atexit
+            atexit.register(lambda: os.unlink(lock_path) if os.path.exists(lock_path) else None)
+            return True
+        except Exception as e:
+            log.debug("PID 文件锁失败，跳过单实例检测: %s", e)
+            return True
+
+
 def main():
     """
     程序入口。
@@ -193,6 +247,22 @@ def main():
     """
     if "--version" in sys.argv:
         print(f"Vox AI Input v{__version__}")
+        sys.exit(0)
+
+    # 单实例检测：防止重复运行
+    if not _acquire_single_instance_lock():
+        log.warning("Vox AI Input 已在运行中，请勿重复启动")
+        # 尝试通知用户
+        try:
+            import platform
+            if platform.system() == "Windows":
+                import ctypes
+                ctypes.windll.user32.MessageBoxW(
+                    0, "Vox AI Input 已在运行中。\n请查看系统托盘区域的麦克风图标。",
+                    "Vox AI Input", 0x40  # MB_ICONINFORMATION
+                )
+        except Exception:
+            pass
         sys.exit(0)
 
     if "--setup" in sys.argv:
