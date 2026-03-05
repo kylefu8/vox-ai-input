@@ -46,9 +46,8 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 Name: "autostart"; Description: "开机自动启动"; GroupDescription: "附加选项:"
 
 [Files]
-; 主程序（exe + _internal/ 目录）
-Source: "dist\VoxAIInput\VoxAIInput.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\VoxAIInput\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
+; 主程序目录下的所有文件和子目录
+Source: "dist\VoxAIInput\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; 配置模板（仅首次安装时复制，不覆盖用户已有的 config.yaml）
 Source: "config.example.yaml"; DestDir: "{app}"; Flags: ignoreversion

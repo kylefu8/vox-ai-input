@@ -11,7 +11,7 @@ from src.logger import setup_logger
 
 log = setup_logger("main")
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 
 
 def _create_components():
