@@ -152,6 +152,11 @@ def _validate_config(config):
 
         str_value = str(value).strip()
         if not value or str_value == "" or str_value in _PLACEHOLDER_VALUES:
+            # 首次启动时跳过验证（由 run.py 标记），让程序启动后打开设置窗口
+            import builtins
+            if getattr(builtins, "_VOX_NEED_SETUP", False):
+                log.warning("配置未填写: %s — 将在启动后打开设置窗口", field_name)
+                return  # 不退出，让程序继续启动
             log.error("配置未填写: %s — 请在 config.yaml 中填入实际值", field_name)
             sys.exit(1)
 

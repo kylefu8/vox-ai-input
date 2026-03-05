@@ -200,22 +200,37 @@ def main():
         run_setup()
         sys.exit(0)
 
-    # 首次启动检测：若 config.yaml 不存在，自动开启配置向导而非直接退出
+    # 首次启动检测：若 config.yaml 不存在，从模板复制一份
     from src.paths import get_project_root
     config_path = get_project_root() / "config.yaml"
     if not config_path.exists():
-        log.warning("未找到 config.yaml，正在启动配置向导...")
-        try:
-            from src.setup_ui import run_setup
-            run_setup()
-        except Exception as e:
-            log.error("配置向导启动失败: %s", e)
-        # 配置向导结束后重新检查
-        if not config_path.exists():
-            log.error("配置文件仍未创建，无法启动。")
-            log.error("请复制 config.example.yaml 为 config.yaml 并填入 Azure API 信息")
+        # 尝试从模板复制
+        example_path = get_project_root() / "config.example.yaml"
+        if not example_path.exists():
+            # 打包模式下模板可能在 _internal/ 里
+            from src.paths import get_resource_dir
+            example_path = get_resource_dir() / "config.example.yaml"
+        if example_path.exists():
+            import shutil
+            shutil.copy2(str(example_path), str(config_path))
+            log.info("已从模板创建 config.yaml，请通过设置窗口填入 Azure API 信息")
+        else:
+            log.error("未找到 config.yaml 和 config.example.yaml")
+            log.error("请从 GitHub Release 下载 config.example.yaml，复制为 config.yaml 并填入 Azure API 信息")
             sys.exit(1)
-        log.info("配置文件已创建，继续启动...")
+
+    # 检查 config.yaml 中的 API key 是否还是 placeholder
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        if "your-api-key-here" in content or "your-resource" in content:
+            log.warning("config.yaml 中的 API 信息尚未填写")
+            log.warning("程序将启动并打开设置窗口，请填入你的 Azure API 信息")
+            # 标记需要自动打开设置窗口
+            import builtins
+            builtins._VOX_NEED_SETUP = True
+    except Exception:
+        pass
 
     if "--test" in sys.argv:
         run_test_mode()

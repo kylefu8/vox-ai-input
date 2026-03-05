@@ -159,6 +159,13 @@ class AIInputApp:
         log.info("按 Ctrl+C 或通过托盘菜单退出程序")
         log.info("")
 
+        # 首次启动（API key 未配置）→ 自动打开设置窗口
+        import builtins
+        if getattr(builtins, "_VOX_NEED_SETUP", False):
+            builtins._VOX_NEED_SETUP = False
+            log.info("首次启动，自动打开设置窗口...")
+            threading.Timer(1.0, self._open_settings).start()
+
         # 热键监听在后台线程启动（方便热键变更时重建）
         hotkey_thread = threading.Thread(
             target=self._hotkey_listener.start,
