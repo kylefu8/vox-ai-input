@@ -57,6 +57,10 @@ class AIInputApp:
         log.info("Vox AI Input 语音输入法 — 正在启动...")
         log.info("=" * 50)
 
+        # 检查是否首次启动（API 未配置）
+        import builtins
+        self._need_setup = getattr(builtins, "_VOX_NEED_SETUP", False)
+
         # 加载配置
         self._config = load_config()
         azure_cfg = get_azure_config(self._config)
@@ -74,26 +78,33 @@ class AIInputApp:
             max_duration=rec_cfg["max_duration"],
         )
 
-        # 初始化转写器（满足 TranscriberProtocol）
-        self._transcriber: TranscriberProtocol = Transcriber(
-            endpoint=azure_cfg["endpoint"],
-            api_key=azure_cfg["api_key"],
-            api_version=azure_cfg["api_version"],
-            deployment=azure_cfg["whisper_deployment"],
-        )
-
-        # 初始化润色器（如果启用，满足 PolisherProtocol）
+        # 初始化转写器和润色器（首次启动时跳过，等用户填写 API 后通过设置窗口重建）
+        self._transcriber: Optional[TranscriberProtocol] = None
         self._polisher: Optional[PolisherProtocol] = None
         self._polish_enabled = polish_cfg.get("enabled", True)
-        if self._polish_enabled:
-            self._polisher = Polisher(
-                endpoint=azure_cfg["endpoint"],
-                api_key=azure_cfg["api_key"],
-                api_version=azure_cfg["api_version"],
-                deployment=azure_cfg["gpt_deployment"],
-                system_prompt=polish_cfg.get("system_prompt", "") or None,
-                translate_to=polish_cfg.get("translate_to", ""),
-            )
+
+        if not self._need_setup:
+            try:
+                self._transcriber = Transcriber(
+                    endpoint=azure_cfg["endpoint"],
+                    api_key=azure_cfg["api_key"],
+                    api_version=azure_cfg["api_version"],
+                    deployment=azure_cfg["whisper_deployment"],
+                )
+                if self._polish_enabled:
+                    self._polisher = Polisher(
+                        endpoint=azure_cfg["endpoint"],
+                        api_key=azure_cfg["api_key"],
+                        api_version=azure_cfg["api_version"],
+                        deployment=azure_cfg["gpt_deployment"],
+                        system_prompt=polish_cfg.get("system_prompt", "") or None,
+                        translate_to=polish_cfg.get("translate_to", ""),
+                    )
+            except Exception as e:
+                log.warning("初始化 API 客户端失败（请通过设置窗口配置 API）: %s", e)
+                self._need_setup = True
+        else:
+            log.info("首次启动，跳过 API 初始化，等待用户配置")
 
         # 语言设置
         self._language = polish_cfg.get("language", "zh")
@@ -349,6 +360,9 @@ class AIInputApp:
         t_start = time.monotonic()
 
         try:
+            if not self._transcriber:
+                log.error("API 未配置，请先在设置中填入 Azure API 信息")
+                return
             # 1. 语音转文字
             t1 = time.monotonic()
             raw_text = self._transcriber.transcribe(

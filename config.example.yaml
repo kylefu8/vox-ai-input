@@ -7,10 +7,10 @@ azure:
     # Azure OpenAI API Key
     api_key: "your-api-key-here"
     # API 版本
-    api_version: "2024-06-01"
+    api_version: "2025-01-01-preview"
 
     # Whisper 模型部署名称
-    whisper_deployment: "whisper"
+    whisper_deployment: "gpt-4o-mini-transcribe"
 
     # GPT 模型部署名称（用于文字润色）
     gpt_deployment: "gpt-4o-mini"
