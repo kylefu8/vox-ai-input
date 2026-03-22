@@ -21,6 +21,7 @@ from src.config import (
     get_recording_config,
     get_hotkey_config,
     get_polish_config,
+    get_stt_config,
 )
 from src.hotkey import HotkeyListener
 from src.interfaces import TranscriberProtocol, PolisherProtocol
@@ -85,12 +86,8 @@ class AIInputApp:
 
         if not self._need_setup:
             try:
-                self._transcriber = Transcriber(
-                    endpoint=azure_cfg["endpoint"],
-                    api_key=azure_cfg["api_key"],
-                    api_version=azure_cfg["api_version"],
-                    deployment=azure_cfg["whisper_deployment"],
-                )
+                stt_cfg = get_stt_config(self._config)
+                self._transcriber = self._create_transcriber(stt_cfg, azure_cfg)
                 if self._polish_enabled:
                     self._polisher = Polisher(
                         endpoint=azure_cfg["endpoint"],
@@ -102,7 +99,7 @@ class AIInputApp:
                         show_original=polish_cfg.get("show_original", False),
                     )
             except Exception as e:
-                log.warning("初始化 API 客户端失败（请通过设置窗口配置 API）: %s", e)
+                log.warning("初始化转写/润色模块失败（请通过设置窗口配置）: %s", e)
                 self._need_setup = True
         else:
             log.info("首次启动，跳过 API 初始化，等待用户配置")
@@ -153,6 +150,61 @@ class AIInputApp:
         )
 
         log.info("所有模块初始化完成！")
+
+    def _create_transcriber(self, stt_cfg, azure_cfg):
+        """
+        工厂方法：根据 STT 后端配置创建对应的转写器。
+
+        - backend == "local" → 创建 LocalTranscriber（本地离线推理）
+        - backend == "azure" → 创建 Transcriber（Azure 云端 API）
+
+        Args:
+            stt_cfg: STT 后端配置（来自 get_stt_config）
+            azure_cfg: Azure 配置（来自 get_azure_config）
+
+        Returns:
+            TranscriberProtocol 实例
+
+        Raises:
+            RuntimeError: 模型未下载、sherpa-onnx 未安装等情况
+        """
+        backend = stt_cfg.get("backend", "azure")
+
+        if backend == "local":
+            from src.local_transcriber import LocalTranscriber
+            from src.model_manager import is_model_ready, get_model_dir
+
+            model_type = stt_cfg.get("model_type", "sense_voice")
+            num_threads = stt_cfg.get("num_threads", 4)
+
+            if not is_model_ready(model_type):
+                raise RuntimeError(
+                    f"本地模型 {model_type} 尚未下载。"
+                    "请在设置中下载模型后再使用本地转写。"
+                )
+
+            model_dir = get_model_dir(model_type)
+            language = self._language if hasattr(self, '_language') else "zh"
+
+            transcriber = LocalTranscriber(
+                model_dir=model_dir,
+                model_type=model_type,
+                num_threads=num_threads,
+                language=language,
+            )
+            log.info("已创建本地转写器（模型: %s）", model_type)
+            return transcriber
+
+        else:
+            # 默认 Azure 模式
+            transcriber = Transcriber(
+                endpoint=azure_cfg["endpoint"],
+                api_key=azure_cfg["api_key"],
+                api_version=azure_cfg["api_version"],
+                deployment=azure_cfg["whisper_deployment"],
+            )
+            log.info("已创建 Azure 云端转写器")
+            return transcriber
 
     def run(self):
         """
@@ -362,7 +414,7 @@ class AIInputApp:
 
         try:
             if not self._transcriber:
-                log.error("API 未配置，请先在设置中填入 Azure API 信息")
+                log.error("转写器未配置，请先在设置中配置转写引擎")
                 return
             # 1. 语音转文字
             t1 = time.monotonic()
@@ -374,7 +426,10 @@ class AIInputApp:
                 log.warning("转写结果为空，跳过")
                 return
 
-            self._session_api_calls += 1  # 转写计为一次 API 调用
+            # 本地模式不计入 API 调用次数
+            stt_cfg = get_stt_config(self._config)
+            if stt_cfg["backend"] != "local":
+                self._session_api_calls += 1
             t2 = time.monotonic()
             log.info("⏱️  转写耗时: %.1f 秒", t2 - t1)
 
@@ -589,16 +644,19 @@ class AIInputApp:
             azure_cfg = get_azure_config(new_config)
             rec_cfg = get_recording_config(new_config)
             polish_cfg = get_polish_config(new_config)
+            stt_cfg = get_stt_config(new_config)
 
-            # 4. 重建转写器
-            self._transcriber = Transcriber(
-                endpoint=azure_cfg["endpoint"],
-                api_key=azure_cfg["api_key"],
-                api_version=azure_cfg["api_version"],
-                deployment=azure_cfg["whisper_deployment"],
-            )
+            # 4. 卸载旧的本地模型（如果有 unload 方法）
+            if hasattr(self._transcriber, 'unload'):
+                try:
+                    self._transcriber.unload()
+                except Exception as e:
+                    log.warning("卸载旧转写模型失败: %s", e)
 
-            # 5. 重建/移除润色器
+            # 5. 用工厂方法重建转写器
+            self._transcriber = self._create_transcriber(stt_cfg, azure_cfg)
+
+            # 6. 重建/移除润色器
             self._polish_enabled = polish_cfg.get("enabled", True)
             if self._polish_enabled:
                 self._polisher = Polisher(
@@ -613,15 +671,15 @@ class AIInputApp:
             else:
                 self._polisher = None
 
-            # 6. 更新语言设置
+            # 7. 更新语言设置
             self._language = polish_cfg.get("language", "zh")
 
-            # 7. 更新录音参数（下次录音时生效）
+            # 8. 更新录音参数（下次录音时生效）
             self._recorder.sample_rate = rec_cfg["sample_rate"]
             self._recorder.channels = rec_cfg["channels"]
             self._recorder.max_duration = rec_cfg["max_duration"]
 
-            # 8. 热键变更时重建监听器
+            # 9. 热键变更时重建监听器
             hotkey_cfg = get_hotkey_config(new_config)
             old_hotkey = get_hotkey_config(self._config).get("combination", "")
             new_hotkey = hotkey_cfg.get("combination", "")
@@ -645,7 +703,7 @@ class AIInputApp:
                 except Exception as e:
                     log.error("重启热键监听器失败: %s", e)
 
-            # 9. 更新内部配置引用
+            # 10. 更新内部配置引用
             self._config = new_config
 
             log.info("配置已热重载完成")

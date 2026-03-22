@@ -1,6 +1,15 @@
 # Vox AI Input 配置模板
 # 复制此文件为 config.yaml，填入你的 Azure API 信息
 
+# 转写引擎设置
+stt:
+    # 后端: "azure"（云端）或 "local"（本地离线）
+    backend: "azure"
+    # 本地模型类型: "sense_voice"（推荐·中文最佳）或 "whisper_small"
+    model_type: "sense_voice"
+    # 本地推理线程数（建议设为 CPU 核心数的一半）
+    num_threads: 4
+
 azure:
     # Azure OpenAI 服务端点（不含 /openai/... 后缀）
     endpoint: "https://your-resource.openai.azure.com/"

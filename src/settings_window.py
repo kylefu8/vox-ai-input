@@ -228,10 +228,15 @@ class SettingsWindow:
                     font=("Segoe UI", 9), anchor="w",
                 ).pack(fill="x")
 
+        # ---- 转写引擎 ----
+        self._build_stt_card(m)
+
         # ---- API 配置 ----
-        _lbl(m, "🔑  API 配置", fg=_C["accent"], font_size=11, bold=True, bg=_C["bg"]).pack(fill="x", pady=(0, 6))
+        self._api_label = _lbl(m, "🔑  API 配置", fg=_C["accent"], font_size=11, bold=True, bg=_C["bg"])
+        self._api_label.pack(fill="x", pady=(0, 6))
         c1 = _card(m)
         c1.pack(fill="x", pady=(0, 12))
+        self._api_card = c1
         az = self._config.get("azure", {})
 
         self._endpoint_var = tk.StringVar(master=self._root, value=az.get("endpoint", ""))
@@ -415,6 +420,308 @@ class SettingsWindow:
         self._root.update_idletasks()
         self._resize_height()
 
+    # ==================== 转写引擎 ====================
+
+    def _build_stt_card(self, parent):
+        """构建「转写引擎」设置卡片。"""
+        from src.model_manager import MODEL_REGISTRY, is_model_ready
+
+        stt = self._config.get("stt", {})
+        cur_backend = stt.get("backend", "azure")
+        cur_model = stt.get("model_type", "sense_voice")
+        cur_threads = stt.get("num_threads", 4)
+
+        _lbl(parent, "🎙  转写引擎", fg=_C["accent"], font_size=11, bold=True, bg=_C["bg"]).pack(
+            fill="x", pady=(0, 6))
+        card = _card(parent)
+        card.pack(fill="x", pady=(0, 12))
+
+        # 后端选择：Azure / 本地
+        self._stt_backend_var = tk.StringVar(master=self._root, value=cur_backend)
+
+        rb_frame = tk.Frame(card, bg=_C["surface"])
+        rb_frame.pack(fill="x", pady=(0, 4))
+
+        tk.Radiobutton(
+            rb_frame, text="☁️  Azure 云端（gpt-4o-mini-transcribe）",
+            variable=self._stt_backend_var, value="azure",
+            bg=_C["surface"], fg=_C["text"], selectcolor=_C["entry"],
+            activebackground=_C["surface"], activeforeground=_C["text"],
+            font=("Segoe UI", 10), command=self._on_stt_backend_changed,
+        ).pack(anchor="w")
+
+        tk.Radiobutton(
+            rb_frame, text="🖥️  本地离线（SenseVoice / Whisper）",
+            variable=self._stt_backend_var, value="local",
+            bg=_C["surface"], fg=_C["text"], selectcolor=_C["entry"],
+            activebackground=_C["surface"], activeforeground=_C["text"],
+            font=("Segoe UI", 10), command=self._on_stt_backend_changed,
+        ).pack(anchor="w")
+
+        # 本地模型选项面板（选 local 时显示）
+        self._local_panel = tk.Frame(card, bg=_C["surface"])
+
+        # 模型选择 + 状态
+        self._stt_model_var = tk.StringVar(master=self._root, value=cur_model)
+        self._model_status_labels = {}
+        self._model_action_btns = {}
+
+        for model_name, model_info in MODEL_REGISTRY.items():
+            row = tk.Frame(self._local_panel, bg=_C["surface"])
+            row.pack(fill="x", pady=2, padx=(20, 0))
+
+            tk.Radiobutton(
+                row, text=model_info["display_name"],
+                variable=self._stt_model_var, value=model_name,
+                bg=_C["surface"], fg=_C["text"], selectcolor=_C["entry"],
+                activebackground=_C["surface"], activeforeground=_C["text"],
+                font=("Segoe UI", 10),
+            ).pack(side="left")
+
+            # 状态标签 + 操作按钮
+            ready = is_model_ready(model_name)
+            if ready:
+                status_lbl = tk.Label(
+                    row, text="✅ 已就绪", bg=_C["surface"], fg=_C["green"],
+                    font=("Segoe UI", 9),
+                )
+                status_lbl.pack(side="right", padx=(8, 0))
+                # 删除按钮
+                del_btn = _btn(row, "删除", lambda mn=model_name: self._delete_model(mn), w=4)
+                del_btn.pack(side="right", padx=(4, 0))
+                self._model_action_btns[model_name] = del_btn
+            else:
+                size_mb = model_info["download_size_mb"]
+                status_lbl = tk.Label(
+                    row, text=f"⬇ {size_mb}MB", bg=_C["surface"], fg=_C["text2"],
+                    font=("Segoe UI", 9),
+                )
+                status_lbl.pack(side="right", padx=(8, 0))
+                # 下载按钮
+                dl_btn = _btn(row, "下载", lambda mn=model_name: self._download_model(mn), w=4)
+                dl_btn.pack(side="right", padx=(4, 0))
+                self._model_action_btns[model_name] = dl_btn
+
+            self._model_status_labels[model_name] = status_lbl
+
+        # 线程数
+        thread_row = tk.Frame(self._local_panel, bg=_C["surface"])
+        thread_row.pack(fill="x", pady=(8, 0), padx=(20, 0))
+        _lbl(thread_row, "推理线程数").pack(side="left")
+        self._num_threads_var = tk.StringVar(master=self._root, value=str(cur_threads))
+        _entry(thread_row, var=self._num_threads_var, w=6).pack(side="left", padx=(10, 0))
+
+        import os
+        cpu_count = os.cpu_count() or 4
+        _lbl(thread_row, f"建议 {cpu_count // 2}（CPU 核心数的一半）", font_size=9).pack(
+            side="left", padx=(8, 0))
+
+        # 根据当前后端决定是否显示本地面板
+        if cur_backend == "local":
+            self._local_panel.pack(fill="x", pady=(4, 0))
+
+    def _on_stt_backend_changed(self):
+        """STT 后端单选按钮切换回调。"""
+        backend = self._stt_backend_var.get()
+        if backend == "local":
+            self._local_panel.pack(fill="x", pady=(4, 0))
+        else:
+            self._local_panel.pack_forget()
+        # 调整窗口大小
+        self._root.update_idletasks()
+        self._resize_height()
+
+    def _download_model(self, model_name):
+        """启动模型下载流程，显示进度对话框。"""
+        from src.model_manager import download_model, get_model_info
+
+        info = get_model_info(model_name)
+        if not info:
+            self._msg("error", "错误", f"未知模型: {model_name}")
+            return
+
+        # 创建进度对话框
+        dlg = tk.Toplevel(self._root)
+        dlg.title(f"下载 {info['display_name']}")
+        dlg.configure(bg=_C["bg"])
+        dlg.resizable(False, False)
+        dlg.transient(self._root)
+        dlg.grab_set()
+        self._set_window_icon(dlg)
+
+        f = tk.Frame(dlg, bg=_C["bg"], padx=30, pady=20)
+        f.pack()
+
+        tk.Label(f, text="⬇️", bg=_C["bg"], font=("Segoe UI", 28)).pack(pady=(0, 8))
+        status_label = tk.Label(
+            f, text="正在准备下载...", bg=_C["bg"], fg=_C["text"],
+            font=("Segoe UI", 10), wraplength=300,
+        )
+        status_label.pack(pady=(0, 8))
+
+        # 使用 ttk Progressbar
+        style = ttk.Style()
+        style.theme_use("default")
+        style.configure(
+            "Download.Horizontal.TProgressbar",
+            troughcolor=_C["entry"],
+            background=_C["accent"],
+            thickness=20,
+        )
+        progress_bar = ttk.Progressbar(
+            f, length=300, mode="determinate",
+            style="Download.Horizontal.TProgressbar",
+        )
+        progress_bar.pack(pady=(0, 12))
+
+        cancel_btn = _btn(f, "取消", lambda: dlg.destroy(), w=10)
+        cancel_btn.pack()
+
+        # 居中于父窗口
+        dlg.update_idletasks()
+        dw, dh = dlg.winfo_reqwidth(), dlg.winfo_reqheight()
+        px, py = self._root.winfo_x(), self._root.winfo_y()
+        pw, ph = self._root.winfo_width(), self._root.winfo_height()
+        x = px + (pw - dw) // 2
+        y = py + (ph - dh) // 2
+        dlg.geometry(f"+{x}+{y}")
+
+        # 进度回调（从下载线程调用，需要用 after 更新 UI）
+        def on_progress(percent, status_text):
+            try:
+                dlg.after(0, lambda: _update_progress(percent, status_text))
+            except Exception:
+                pass
+
+        def _update_progress(percent, status_text):
+            try:
+                progress_bar["value"] = percent
+                status_label.config(text=status_text)
+            except Exception:
+                pass
+
+        def on_complete(success):
+            try:
+                dlg.after(0, lambda: _on_download_done(success))
+            except Exception:
+                pass
+
+        def _on_download_done(success):
+            try:
+                dlg.destroy()
+            except Exception:
+                pass
+            if success:
+                self._refresh_model_status(model_name)
+                self._msg("info", "下载完成", f"{info['display_name']} 已就绪！")
+            else:
+                self._msg("error", "下载失败", "请检查网络连接后重试。")
+
+        def on_error(error_msg):
+            try:
+                dlg.after(0, lambda: _on_download_error(error_msg))
+            except Exception:
+                pass
+
+        def _on_download_error(error_msg):
+            try:
+                dlg.destroy()
+            except Exception:
+                pass
+            self._msg("error", "下载出错", error_msg)
+
+        # 启动下载
+        download_model(
+            model_name,
+            on_progress=on_progress,
+            on_complete=on_complete,
+            on_error=on_error,
+        )
+
+    def _delete_model(self, model_name):
+        """删除已下载的模型。"""
+        from src.model_manager import delete_model, get_model_info
+
+        info = get_model_info(model_name)
+        display = info["display_name"] if info else model_name
+
+        # 确认对话框
+        dlg = tk.Toplevel(self._root)
+        dlg.title("确认删除")
+        dlg.configure(bg=_C["bg"])
+        dlg.resizable(False, False)
+        dlg.transient(self._root)
+        dlg.grab_set()
+        self._set_window_icon(dlg)
+
+        f = tk.Frame(dlg, bg=_C["bg"], padx=30, pady=20)
+        f.pack()
+
+        tk.Label(f, text="⚠️", bg=_C["bg"], font=("Segoe UI", 28)).pack(pady=(0, 8))
+        tk.Label(
+            f, text="确认删除模型？", bg=_C["bg"], fg=_C["yellow"],
+            font=("Segoe UI Semibold", 13),
+        ).pack()
+        tk.Label(
+            f, text=f"将删除 {display} 的所有文件。\n如需使用本地转写需重新下载。",
+            bg=_C["bg"], fg=_C["text"], font=("Segoe UI", 10),
+            wraplength=280, justify="center",
+        ).pack(pady=(8, 16))
+
+        btn_frame = tk.Frame(f, bg=_C["bg"])
+        btn_frame.pack()
+
+        def _do_delete():
+            dlg.destroy()
+            if delete_model(model_name):
+                self._refresh_model_status(model_name)
+                self._msg("info", "删除完成", f"{display} 已删除。")
+            else:
+                self._msg("error", "删除失败", "请关闭可能占用模型文件的程序后重试。")
+
+        _btn(btn_frame, "取消", lambda: dlg.destroy(), w=8).pack(side="left", padx=(0, 8))
+        _btn(btn_frame, "删除", _do_delete, accent=True, w=8).pack(side="left")
+
+        # 居中于父窗口
+        dlg.update_idletasks()
+        dw, dh = dlg.winfo_reqwidth(), dlg.winfo_reqheight()
+        px, py = self._root.winfo_x(), self._root.winfo_y()
+        pw, ph = self._root.winfo_width(), self._root.winfo_height()
+        x = px + (pw - dw) // 2
+        y = py + (ph - dh) // 2
+        dlg.geometry(f"+{x}+{y}")
+
+        dlg.wait_window()
+
+    def _refresh_model_status(self, model_name):
+        """刷新指定模型的状态显示（下载完成/删除后调用）。"""
+        from src.model_manager import is_model_ready, MODEL_REGISTRY
+
+        ready = is_model_ready(model_name)
+        info = MODEL_REGISTRY.get(model_name, {})
+
+        # 更新状态标签
+        if model_name in self._model_status_labels:
+            lbl = self._model_status_labels[model_name]
+            if ready:
+                lbl.config(text="✅ 已就绪", fg=_C["green"])
+            else:
+                size_mb = info.get("download_size_mb", "?")
+                lbl.config(text=f"⬇ {size_mb}MB", fg=_C["text2"])
+
+        # 更新操作按钮
+        if model_name in self._model_action_btns:
+            old_btn = self._model_action_btns[model_name]
+            parent = old_btn.master
+            old_btn.destroy()
+
+            if ready:
+                new_btn = _btn(parent, "删除", lambda mn=model_name: self._delete_model(mn), w=4)
+            else:
+                new_btn = _btn(parent, "下载", lambda mn=model_name: self._download_model(mn), w=4)
+            new_btn.pack(side="right", padx=(4, 0))
+            self._model_action_btns[model_name] = new_btn
+
     # ==================== 翻译联动 ====================
 
     def _on_translate_changed(self, event=None):
@@ -531,15 +838,51 @@ class SettingsWindow:
             self._on_close()
 
     def _collect_config(self):
+        """收集 UI 中所有设置值，组装为完整配置字典。"""
         import copy
+
+        # 读取 STT 后端设置
+        stt_backend = self._stt_backend_var.get()
+        is_local = stt_backend == "local"
+        polish_enabled = self._polish_var.get()
+
+        # 读取 Azure 字段
         ep = self._endpoint_var.get().strip()
         ak = self._apikey_var.get().strip()
         wh = self._whisper_var.get().strip()
         gp = self._gpt_var.get().strip()
-        if not ep: raise ValueError("端点 URL 不能为空")
-        if not ak: raise ValueError("API Key 不能为空")
-        if not wh: raise ValueError("转写模型不能为空")
-        if not gp: raise ValueError("润色模型不能为空")
+
+        # 根据后端模式做条件验证
+        if is_local and not polish_enabled:
+            # 完全离线模式：不需要任何 Azure 配置
+            pass
+        elif is_local and polish_enabled:
+            # 本地转写 + 云端润色：需要 endpoint、api_key、gpt_deployment
+            if not ep:
+                raise ValueError("端点 URL 不能为空（润色功能需要 Azure API）")
+            if not ak:
+                raise ValueError("API Key 不能为空（润色功能需要 Azure API）")
+            if not gp:
+                raise ValueError("润色模型不能为空")
+        else:
+            # Azure 云端模式：所有字段必填
+            if not ep:
+                raise ValueError("端点 URL 不能为空")
+            if not ak:
+                raise ValueError("API Key 不能为空")
+            if not wh:
+                raise ValueError("转写模型不能为空")
+            if not gp:
+                raise ValueError("润色模型不能为空")
+
+        # 本地模式下验证线程数
+        if is_local:
+            try:
+                nt = int(self._num_threads_var.get().strip())
+                assert nt > 0
+            except Exception:
+                raise ValueError("推理线程数必须是正整数")
+
         try:
             sr = int(self._sample_rate_var.get().strip())
             assert sr > 0
@@ -557,6 +900,14 @@ class SettingsWindow:
             raise ValueError("最大录音时长必须是正整数")
 
         c = copy.deepcopy(self._config)
+
+        # STT 配置
+        s = c.setdefault("stt", {})
+        s["backend"] = stt_backend
+        if is_local:
+            s["model_type"] = self._stt_model_var.get()
+            s["num_threads"] = int(self._num_threads_var.get().strip())
+
         a = c.setdefault("azure", {})
         a["endpoint"] = ep
         a["api_key"] = ak
@@ -569,7 +920,7 @@ class SettingsWindow:
         r["max_duration"] = md
         c.setdefault("hotkey", {})["combination"] = self._hotkey_var.get().strip()
         p = c.setdefault("polish", {})
-        p["enabled"] = self._polish_var.get()
+        p["enabled"] = polish_enabled
         p["language"] = self._language_var.get().strip()
         p["system_prompt"] = self._strip_translate_suffix(self._prompt_text.get("1.0", "end-1c").strip())
         tl = ""

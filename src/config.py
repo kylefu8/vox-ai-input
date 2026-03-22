@@ -91,16 +91,34 @@ def save_config(config_dict):
     Raises:
         ValueError: 当必填字段为空时
     """
-    # 基本验证
+    # 基本验证：根据 STT 后端和润色开关决定哪些 Azure 字段必填
+    stt_cfg = get_stt_config(config_dict)
     azure = config_dict.get("azure", {})
-    if not azure.get("endpoint", "").strip():
-        raise ValueError("Azure 端点 URL 不能为空")
-    if not azure.get("api_key", "").strip():
-        raise ValueError("Azure API Key 不能为空")
-    if not azure.get("whisper_deployment", "").strip():
-        raise ValueError("转写模型部署名不能为空")
-    if not azure.get("gpt_deployment", "").strip():
-        raise ValueError("润色模型部署名不能为空")
+    polish = config_dict.get("polish", {})
+    is_local = stt_cfg["backend"] == "local"
+    polish_enabled = polish.get("enabled", True)
+
+    if is_local and not polish_enabled:
+        # 完全离线模式：不需要任何 Azure 配置
+        pass
+    elif is_local and polish_enabled:
+        # 本地转写 + 云端润色：需要 endpoint、api_key、gpt_deployment
+        if not azure.get("endpoint", "").strip():
+            raise ValueError("Azure 端点 URL 不能为空（润色功能需要）")
+        if not azure.get("api_key", "").strip():
+            raise ValueError("Azure API Key 不能为空（润色功能需要）")
+        if not azure.get("gpt_deployment", "").strip():
+            raise ValueError("润色模型部署名不能为空")
+    else:
+        # Azure 云端模式：所有字段必填
+        if not azure.get("endpoint", "").strip():
+            raise ValueError("Azure 端点 URL 不能为空")
+        if not azure.get("api_key", "").strip():
+            raise ValueError("Azure API Key 不能为空")
+        if not azure.get("whisper_deployment", "").strip():
+            raise ValueError("转写模型部署名不能为空")
+        if not azure.get("gpt_deployment", "").strip():
+            raise ValueError("润色模型部署名不能为空")
 
     try:
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -129,18 +147,41 @@ def _validate_config(config):
     """
     验证配置字典中的必要字段是否存在且不为空。
 
+    根据 STT 后端和润色开关决定哪些 Azure 字段必填：
+    - azure 模式：所有 Azure 字段必填（与之前一致）
+    - local + 润色开：需要 endpoint、api_key、gpt_deployment
+    - local + 润色关：不需要任何 Azure 配置（完全离线）
+
     Args:
         config: 从 YAML 加载的配置字典
 
     Raises:
         SystemExit: 当必要配置缺失时
     """
-    required_fields = [
-        ("azure.endpoint", ["azure", "endpoint"]),
-        ("azure.api_key", ["azure", "api_key"]),
-        ("azure.whisper_deployment", ["azure", "whisper_deployment"]),
-        ("azure.gpt_deployment", ["azure", "gpt_deployment"]),
-    ]
+    stt_cfg = get_stt_config(config)
+    polish_cfg = config.get("polish", {})
+    is_local = stt_cfg["backend"] == "local"
+    polish_enabled = polish_cfg.get("enabled", True)
+
+    # 确定需要验证的 Azure 字段
+    if is_local and not polish_enabled:
+        # 完全离线模式：不需要任何 Azure 配置
+        required_fields = []
+    elif is_local and polish_enabled:
+        # 本地转写 + 云端润色
+        required_fields = [
+            ("azure.endpoint", ["azure", "endpoint"]),
+            ("azure.api_key", ["azure", "api_key"]),
+            ("azure.gpt_deployment", ["azure", "gpt_deployment"]),
+        ]
+    else:
+        # Azure 云端模式：所有字段必填
+        required_fields = [
+            ("azure.endpoint", ["azure", "endpoint"]),
+            ("azure.api_key", ["azure", "api_key"]),
+            ("azure.whisper_deployment", ["azure", "whisper_deployment"]),
+            ("azure.gpt_deployment", ["azure", "gpt_deployment"]),
+        ]
 
     for field_name, keys in required_fields:
         value = config
@@ -232,4 +273,25 @@ def get_polish_config(config):
         "system_prompt": polish.get("system_prompt", ""),
         "translate_to": polish.get("translate_to", ""),
         "show_original": polish.get("show_original", False),
+    }
+
+
+def get_stt_config(config):
+    """
+    从配置字典中提取 STT 后端配置。
+
+    Args:
+        config: 完整的配置字典
+
+    Returns:
+        dict: 包含 backend, model_type, num_threads
+              - backend: "azure"（云端）或 "local"（本地离线）
+              - model_type: 本地模型类型（sense_voice 或 whisper_small）
+              - num_threads: 本地推理线程数
+    """
+    stt = config.get("stt", {})
+    return {
+        "backend": stt.get("backend", "azure"),
+        "model_type": stt.get("model_type", "sense_voice"),
+        "num_threads": stt.get("num_threads", 4),
     }

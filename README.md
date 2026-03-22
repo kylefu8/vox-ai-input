@@ -5,10 +5,15 @@
 > 🎤 说话 → 🤖 AI 转写 → ✨ AI 润色 → 🌐 翻译（可选）→ 📋 自动粘贴
 
 支持中英文混合识别、口述符号自动转换（如"艾特" → @），AI 自动修正标点和语法，可选实时翻译到 9 种语言。
-> **当前版本专为 [Azure AI Foundry](https://ai.azure.com/) 上部署的 `gpt-4o-mini-transcribe`（语音转写）和 `gpt-4o-mini`（文字润色）模型优化。后续版本将支持更多模型和提供商（OpenAI 直连、本地 Whisper 等）。**
+
+> **v0.0.5 新增本地离线转写！** 集成 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 离线推理引擎，支持 SenseVoice（中文最佳）和 Whisper Small（多语言通用）模型，无需联网即可语音转文字。也可继续使用 Azure 云端转写（gpt-4o-mini-transcribe）。
 ## 功能特性
 
 - **一键语音输入** — 长按快捷键说话，松开自动输出到当前应用
+- **🆕 本地离线转写** — 集成 sherpa-onnx，无需联网，延迟极低
+  - SenseVoice（推荐·中文最佳，~156MB）
+  - Whisper Small（多语言通用，~610MB）
+  - 设置窗口一键下载模型，Azure / 本地随时切换
 - **AI 智能润色** — 自动修正标点、语法、去口语填充词
 - **中英混合识别** — 中英文夹杂也能准确识别，技术术语保留英文
 - **符号口述转换** — 说"艾特"输出 @、说"井号"输出 #
@@ -27,10 +32,10 @@
 ## 环境要求
 
 - **Windows** 10/11 (x86_64)
-- **[Azure AI Foundry](https://ai.azure.com/)** 已部署以下模型：
-  - `gpt-4o-mini-transcribe` — 语音转写
-  - `gpt-4o-mini` — 文字润色 + 翻译
 - **麦克风** 系统已授权访问
+- **转写引擎**（二选一）：
+  - 🖥️ **本地离线** — 无需额外配置，设置中下载模型即可使用
+  - ☁️ **Azure 云端** — 需要 [Azure AI Foundry](https://ai.azure.com/) 已部署 `gpt-4o-mini-transcribe` + `gpt-4o-mini`
 
 ## 快速开始
 
@@ -117,8 +122,11 @@ python run.py
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `azure.endpoint` | Azure OpenAI 端点 URL | *必填* |
-| `azure.api_key` | Azure OpenAI API Key | *必填* |
+| `stt.backend` | 转写引擎：`azure`（云端）或 `local`（本地离线） | `azure` |
+| `stt.model_type` | 本地模型：`sense_voice` 或 `whisper_small` | `sense_voice` |
+| `stt.num_threads` | 本地推理线程数 | `4` |
+| `azure.endpoint` | Azure OpenAI 端点 URL | *云端必填* |
+| `azure.api_key` | Azure OpenAI API Key | *云端必填* |
 | `azure.api_version` | API 版本 | `2025-01-01-preview` |
 | `azure.whisper_deployment` | 语音转写模型部署名 | `whisper` |
 | `azure.gpt_deployment` | GPT 润色模型部署名 | `gpt-4o-mini` |
@@ -145,6 +153,8 @@ vox-ai-input/
 │   ├── config.py           # 配置加载、保存与验证
 │   ├── recorder.py         # 麦克风录音 + 设备检测
 │   ├── transcriber.py      # Azure 语音转文字
+│   ├── local_transcriber.py # 本地离线语音转文字（sherpa-onnx）
+│   ├── model_manager.py    # 本地模型下载与管理
 │   ├── polisher.py         # AI 文字润色 + 翻译
 │   ├── hotkey.py           # 全局热键监听
 │   ├── output.py           # 剪贴板 + 模拟粘贴
@@ -160,6 +170,7 @@ vox-ai-input/
 │   ├── interfaces.py       # Protocol 接口定义
 │   └── logger.py           # 统一日志（UTF-8 安全）
 ├── tests/                  # 120+ 测试用例
+├── models/                 # 本地 STT 模型（用户按需下载，不含在 git 中）
 ├── assets/sounds/          # 录音提示音
 ├── scripts/                # 构建辅助脚本
 └── .github/workflows/      # GitHub Actions CI/CD
@@ -203,7 +214,7 @@ pyinstaller build.spec --clean --noconfirm
 ## 技术栈
 
 - **语言**: Python 3.10+
-- **语音转写**: Azure AI Foundry (gpt-4o-mini-transcribe)
+- **语音转写**: 本地 sherpa-onnx（SenseVoice / Whisper Small）或 Azure AI Foundry (gpt-4o-mini-transcribe)
 - **文字润色 + 翻译**: Azure AI Foundry (gpt-4o-mini)
 - **热键监听**: pynput
 - **录音**: sounddevice + soundfile
