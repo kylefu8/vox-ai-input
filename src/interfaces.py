@@ -36,6 +36,32 @@ class TranscriberProtocol(Protocol):
 
 
 @runtime_checkable
+class StreamingTranscriberProtocol(Protocol):
+    """
+    流式语音转文字接口。
+
+    任何实现了以下方法的类都自动满足此协议。
+    同时兼容 TranscriberProtocol（包含 transcribe 方法）。
+    """
+
+    def start_session(self) -> None:
+        """开始一个新的流式转写会话。"""
+        ...
+
+    def feed_audio_chunk(self, audio_data, sample_rate: int = 16000) -> None:
+        """喂入一块音频数据。"""
+        ...
+
+    def stop_session(self) -> str:
+        """停止会话并返回最终转写结果。"""
+        ...
+
+    def transcribe(self, audio_path, language: str = "zh") -> str | None:
+        """非流式回退接口：将音频文件转为文字。"""
+        ...
+
+
+@runtime_checkable
 class PolisherProtocol(Protocol):
     """
     文字润色接口。

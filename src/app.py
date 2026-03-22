@@ -7,7 +7,9 @@ AIInputApp 负责协调所有子模块，管理应用的状态机：
 线程模型：
 - 主线程: pynput 键盘监听（事件循环）
 - 录音: sounddevice 回调模式（音频线程，不阻塞）
-- 后台处理: Whisper API → GPT API → 粘贴（daemon thread）
+- 后台处理: 转写 → 润色 → 粘贴（daemon thread）
+- 预览浮窗: 独立 tkinter 线程（queue 通信）
+- 流式解码: 独立线程（从音频 queue 取 chunk 解码）
 """
 
 import threading
@@ -30,6 +32,7 @@ from src.notifier import play_start_sound, play_stop_sound, create_default_sound
 from src.output import paste_text
 from src.polisher import Polisher
 from src.countdown import CountdownOverlay
+from src.preview_overlay import PreviewOverlay
 from src.log_window import LogWindow
 from src.recorder import Recorder, check_audio_input
 from src.updater import Updater
@@ -84,6 +87,10 @@ class AIInputApp:
         self._polisher: Optional[PolisherProtocol] = None
         self._polish_enabled = polish_cfg.get("enabled", True)
 
+        # 流式模式标志 + 流式转写器引用
+        self._is_streaming_mode = False
+        self._streaming_transcriber = None
+
         if not self._need_setup:
             try:
                 stt_cfg = get_stt_config(self._config)
@@ -135,6 +142,9 @@ class AIInputApp:
         # 录音倒计时浮窗
         self._countdown = CountdownOverlay()
 
+        # 预览浮窗（实时显示转写/润色状态和结果）
+        self._preview = PreviewOverlay()
+
         # 实时日志窗口
         self._log_window = LogWindow()
 
@@ -155,6 +165,7 @@ class AIInputApp:
         """
         工厂方法：根据 STT 后端配置创建对应的转写器。
 
+        - backend == "local" + streaming model + streaming=True → 创建 StreamingTranscriber
         - backend == "local" → 创建 LocalTranscriber（本地离线推理）
         - backend == "azure" → 创建 Transcriber（Azure 云端 API）
 
@@ -171,8 +182,7 @@ class AIInputApp:
         backend = stt_cfg.get("backend", "azure")
 
         if backend == "local":
-            from src.local_transcriber import LocalTranscriber
-            from src.model_manager import is_model_ready, get_model_dir
+            from src.model_manager import is_model_ready, get_model_dir, MODEL_REGISTRY
 
             model_type = stt_cfg.get("model_type", "sense_voice")
             num_threads = stt_cfg.get("num_threads", 4)
@@ -186,17 +196,53 @@ class AIInputApp:
             model_dir = get_model_dir(model_type)
             language = self._language if hasattr(self, '_language') else "zh"
 
-            transcriber = LocalTranscriber(
-                model_dir=model_dir,
-                model_type=model_type,
-                num_threads=num_threads,
-                language=language,
-            )
-            log.info("已创建本地转写器（模型: %s）", model_type)
-            return transcriber
+            # 检查是否为流式模型 + 用户启用了流式转写
+            model_info = MODEL_REGISTRY.get(model_type, {})
+            is_streaming_model = model_info.get("streaming", False)
+            streaming_enabled = stt_cfg.get("streaming", False)
+
+            if is_streaming_model and streaming_enabled:
+                # 流式模式：创建 StreamingTranscriber
+                from src.streaming_transcriber import StreamingTranscriber
+
+                self._is_streaming_mode = True
+                transcriber = StreamingTranscriber(
+                    model_dir=model_dir,
+                    num_threads=num_threads,
+                    on_partial_result=self._on_streaming_text,
+                )
+                self._streaming_transcriber = transcriber
+                log.info("已创建流式转写器（模型: %s，流式模式）", model_type)
+                return transcriber
+            else:
+                # 非流式本地模式
+                self._is_streaming_mode = False
+                self._streaming_transcriber = None
+
+                if is_streaming_model:
+                    # 用 Paraformer 流式模型但走非流式路径
+                    from src.streaming_transcriber import StreamingTranscriber
+                    transcriber = StreamingTranscriber(
+                        model_dir=model_dir,
+                        num_threads=num_threads,
+                    )
+                    log.info("已创建 Paraformer 转写器（非流式模式，模型: %s）", model_type)
+                    return transcriber
+                else:
+                    from src.local_transcriber import LocalTranscriber
+                    transcriber = LocalTranscriber(
+                        model_dir=model_dir,
+                        model_type=model_type,
+                        num_threads=num_threads,
+                        language=language,
+                    )
+                    log.info("已创建本地转写器（模型: %s）", model_type)
+                    return transcriber
 
         else:
             # 默认 Azure 模式
+            self._is_streaming_mode = False
+            self._streaming_transcriber = None
             transcriber = Transcriber(
                 endpoint=azure_cfg["endpoint"],
                 api_key=azure_cfg["api_key"],
@@ -278,6 +324,7 @@ class AIInputApp:
         热键按下回调 — 开始录音。
 
         在热键监听线程中调用。
+        流式模式下同时启动转写会话和预览浮窗。
         """
         # 如果正在处理上一条语音，跳过（加锁读取，避免竞态）
         with self._processing_lock:
@@ -285,27 +332,42 @@ class AIInputApp:
                 log.warning("上一条语音还在处理中，请稍候...")
                 return
 
+        # 检查转写器是否就绪（首次启动未配置 / 初始化失败时为 None）
+        if not self._transcriber:
+            log.warning("转写器未就绪，请先在设置中配置转写引擎")
+            return
+
         # 更新托盘状态为录音中
         self._tray.set_state(STATE_RECORDING)
 
         # 播放开始提示音
         play_start_sound()
 
-        # 开始录音（设置自动停止回调 + 倒计时回调）
+        # 流式模式：先启动转写会话 + 浮窗
+        on_chunk = None
+        if self._is_streaming_mode and self._streaming_transcriber:
+            self._streaming_transcriber.start_session()
+            self._preview.show(text="", status="🎤 正在录音...")
+            on_chunk = self._streaming_transcriber.feed_audio_chunk
+
+        # 开始录音（流式模式传入 on_audio_chunk 回调）
         if not self._recorder.start(
             on_auto_stop=self._on_auto_stop,
             on_countdown=self._on_countdown_start,
+            on_audio_chunk=on_chunk,
         ):
             # 录音启动失败，恢复空闲状态
             log.error("录音启动失败，请检查麦克风")
             self._tray.set_state(STATE_IDLE)
+            self._preview.dismiss()
 
     def _on_hotkey_release(self):
         """
         热键松开回调 — 停止录音并启动后台处理。
 
         在热键监听线程中调用。
-        先停录音再播提示音，避免 sounddevice 设备冲突。
+        流式模式：停止转写会话 → 取最终结果 → 润色 → 粘贴
+        非流式模式：停录音 → 显示浮窗 → 转写 → 润色 → 粘贴
         """
         if not self._recorder.is_recording:
             return
@@ -318,27 +380,52 @@ class AIInputApp:
 
         # 再播放结束提示音（此时设备已释放，避免冲突）
         play_stop_sound()
-        if not wav_path:
-            log.warning("没有有效的录音数据")
-            self._tray.set_state(STATE_IDLE)
-            return
 
-        # 启动后台线程处理（不阻塞热键监听）
-        thread = threading.Thread(
-            target=self._process_audio,
-            args=(wav_path,),
-            daemon=True,
-        )
-        thread.start()
+        if self._is_streaming_mode and self._streaming_transcriber:
+            # ===== 流式模式 =====
+            # 停止流式转写会话，获取最终结果
+            final_streaming_text = self._streaming_transcriber.stop_session()
+
+            if not final_streaming_text:
+                log.warning("流式转写结果为空，跳过")
+                self._preview.dismiss()
+                self._tray.set_state(STATE_IDLE)
+                if wav_path:
+                    cleanup_audio(wav_path)
+                return
+
+            # 启动后台线程做润色+粘贴
+            thread = threading.Thread(
+                target=self._process_streaming_result,
+                args=(final_streaming_text, wav_path),
+                daemon=True,
+            )
+            thread.start()
+
+        else:
+            # ===== 非流式模式 =====
+            if not wav_path:
+                log.warning("没有有效的录音数据")
+                self._tray.set_state(STATE_IDLE)
+                return
+
+            # 显示预览浮窗 — 转写中状态
+            self._preview.show(text="", status="📡 转写中...")
+
+            # 启动后台线程处理（不阻塞热键监听）
+            thread = threading.Thread(
+                target=self._process_audio,
+                args=(wav_path,),
+                daemon=True,
+            )
+            thread.start()
 
     def _on_auto_stop(self, wav_path):
         """
         录音达到最大时长自动停止时的回调。
 
-        与手动松开热键的路径保持一致：播放停止提示音 + 后台线程处理。
-        在 Timer 线程中调用，不能直接同步执行 _process_audio（会阻塞 Timer）。
-        注意：此时录音已经停止（由 Recorder 内部处理），sounddevice 设备已释放，
-        可以安全播放提示音。
+        与手动松开热键的路径保持一致。
+        在 Timer 线程中调用，不能直接同步执行处理（会阻塞 Timer）。
 
         Args:
             wav_path: 录音文件路径
@@ -349,13 +436,37 @@ class AIInputApp:
         # 播放结束提示音（录音已停止，设备已释放）
         play_stop_sound()
 
-        # 启动后台线程处理（和手动路径一致，不阻塞 Timer 线程）
-        thread = threading.Thread(
-            target=self._process_audio,
-            args=(wav_path,),
-            daemon=True,
-        )
-        thread.start()
+        if self._is_streaming_mode and self._streaming_transcriber:
+            # ===== 流式模式 =====
+            final_streaming_text = self._streaming_transcriber.stop_session()
+
+            if not final_streaming_text:
+                log.warning("流式转写结果为空，跳过")
+                self._preview.dismiss()
+                self._tray.set_state(STATE_IDLE)
+                if wav_path:
+                    cleanup_audio(wav_path)
+                return
+
+            thread = threading.Thread(
+                target=self._process_streaming_result,
+                args=(final_streaming_text, wav_path),
+                daemon=True,
+            )
+            thread.start()
+
+        else:
+            # ===== 非流式模式 =====
+            # 显示预览浮窗 — 转写中状态
+            self._preview.show(text="", status="📡 转写中...")
+
+            # 启动后台线程处理
+            thread = threading.Thread(
+                target=self._process_audio,
+                args=(wav_path,),
+                daemon=True,
+            )
+            thread.start()
 
     def _on_cancel(self):
         """
@@ -372,6 +483,16 @@ class AIInputApp:
 
         # 关闭倒计时浮窗
         self._countdown.dismiss()
+
+        # 关闭预览浮窗
+        self._preview.dismiss()
+
+        # 停止流式转写会话（如果正在进行）
+        if self._is_streaming_mode and self._streaming_transcriber:
+            try:
+                self._streaming_transcriber.stop_session()
+            except Exception:
+                pass
 
         # 清理临时文件（如果产生了的话）
         if wav_path:
@@ -395,9 +516,10 @@ class AIInputApp:
 
     def _process_audio(self, wav_path):
         """
-        后台处理流程：转写 → 润色 → 粘贴。
+        后台处理流程：转写 → 润色 → 粘贴（非流式路径）。
 
         在后台 daemon 线程中执行。
+        浮窗已在 _on_hotkey_release / _on_auto_stop 中 show。
 
         Args:
             wav_path: WAV 录音文件路径
@@ -405,6 +527,7 @@ class AIInputApp:
         with self._processing_lock:
             if self._is_processing:
                 log.warning("已有处理任务在运行，跳过")
+                cleanup_audio(wav_path)
                 return
             self._is_processing = True
 
@@ -415,6 +538,7 @@ class AIInputApp:
         try:
             if not self._transcriber:
                 log.error("转写器未配置，请先在设置中配置转写引擎")
+                self._preview.dismiss()
                 return
             # 1. 语音转文字
             t1 = time.monotonic()
@@ -424,6 +548,7 @@ class AIInputApp:
 
             if not raw_text:
                 log.warning("转写结果为空，跳过")
+                self._preview.dismiss()
                 return
 
             # 本地模式不计入 API 调用次数
@@ -433,6 +558,12 @@ class AIInputApp:
             t2 = time.monotonic()
             log.info("⏱️  转写耗时: %.1f 秒", t2 - t1)
 
+            # 更新浮窗 — 显示原文 + 润色中状态
+            if self._polisher and self._polish_enabled:
+                self._preview.update_text(raw_text, status="🤖 润色中...")
+            else:
+                self._preview.update_text(raw_text, status="✅ 完成")
+
             # 2. AI 润色
             if self._polisher and self._polish_enabled:
                 final_text = self._polisher.polish(raw_text)
@@ -441,6 +572,7 @@ class AIInputApp:
 
             if not final_text:
                 log.warning("润色结果为空，跳过")
+                self._preview.dismiss()
                 return
 
             t3 = time.monotonic()
@@ -448,7 +580,9 @@ class AIInputApp:
                 self._session_api_calls += 1  # 润色计为一次 API 调用
                 log.info("⏱️  润色耗时: %.1f 秒", t3 - t2)
 
-            # 3. 翻译已合并进润色 prompt，无需单独步骤
+            # 3. 更新浮窗显示最终结果
+            self._preview.update_text(final_text, status="✅ 完成")
+            time.sleep(0.5)  # 短暂展示最终结果
 
             # 4. 粘贴到当前应用
             log.info("🎯 最终文字: %s",
@@ -463,8 +597,13 @@ class AIInputApp:
             self._last_result_text = final_text
             self._last_result_duration = total_duration
 
+            # 让用户看到结果后关闭浮窗
+            time.sleep(1.0)
+            self._preview.dismiss()
+
         except Exception as e:
             log.error("处理音频时出错: %s", e)
+            self._preview.dismiss()
 
         finally:
             # 无论成功与否，都清理临时音频文件
@@ -472,6 +611,104 @@ class AIInputApp:
             with self._processing_lock:
                 self._is_processing = False
             # 处理完毕，恢复空闲状态
+            self._tray.set_state(STATE_IDLE)
+
+    # ==================== 流式转写 ====================
+
+    def _on_streaming_text(self, text):
+        """
+        流式解码线程中的回调 — 每次识别出新文字时调用。
+
+        通过 queue 安全更新预览浮窗内容。
+
+        Args:
+            text: 当前累积的转写文字
+        """
+        self._preview.update_text(text, status="🎤 正在录音...")
+
+    def _process_streaming_result(self, raw_text, wav_path):
+        """
+        流式转写完成后的处理流程：润色 → 粘贴（跳过转写步骤）。
+
+        在后台 daemon 线程中执行。
+
+        Args:
+            raw_text: 流式转写的最终文字
+            wav_path: 录音文件路径（用于清理）
+        """
+        with self._processing_lock:
+            if self._is_processing:
+                log.warning("已有处理任务在运行，跳过")
+                if wav_path:
+                    cleanup_audio(wav_path)
+                return
+            self._is_processing = True
+
+        # 更新托盘状态为处理中
+        self._tray.set_state(STATE_PROCESSING)
+        t_start = time.monotonic()
+
+        try:
+            log.info("流式转写原文: %s",
+                     raw_text[:80] + "..." if len(raw_text) > 80 else raw_text)
+
+            # 更新浮窗 — 显示原文 + 润色中状态
+            if self._polisher and self._polish_enabled:
+                self._preview.update_text(raw_text, status="🤖 润色中...")
+            else:
+                self._preview.update_text(raw_text, status="✅ 完成")
+
+            # AI 润色
+            if self._polisher and self._polish_enabled:
+                t1 = time.monotonic()
+                final_text = self._polisher.polish(raw_text)
+                t2 = time.monotonic()
+                self._session_api_calls += 1
+                log.info("⏱️  润色耗时: %.1f 秒", t2 - t1)
+            else:
+                final_text = raw_text
+
+            if not final_text:
+                log.warning("润色结果为空，降级使用原始文字")
+                final_text = raw_text
+
+            # 更新浮窗显示最终结果
+            self._preview.update_text(final_text, status="✅ 完成")
+            time.sleep(0.5)  # 短暂展示最终结果
+
+            # 粘贴到当前应用
+            log.info("🎯 最终文字: %s",
+                      final_text[:80] + "..." if len(final_text) > 80 else final_text)
+            paste_text(final_text)
+
+            total_duration = time.monotonic() - t_start
+            log.info("⏱️  总处理耗时: %.1f 秒（本次会话已调用 API %d 次）",
+                      total_duration, self._session_api_calls)
+
+            # 记录最近结果
+            self._last_result_text = final_text
+            self._last_result_duration = total_duration
+
+            # 让用户看到结果后关闭浮窗
+            time.sleep(1.0)
+            self._preview.dismiss()
+
+        except Exception as e:
+            log.error("处理流式转写结果时出错: %s", e)
+            # 降级：尝试粘贴原始文字
+            try:
+                paste_text(raw_text)
+                log.info("已降级粘贴原始流式文字")
+            except Exception:
+                pass
+            self._preview.dismiss()
+
+        finally:
+            # 清理临时音频文件
+            if wav_path:
+                cleanup_audio(wav_path)
+            with self._processing_lock:
+                self._is_processing = False
             self._tray.set_state(STATE_IDLE)
 
     # ==================== 日志窗口 ====================
@@ -653,10 +890,22 @@ class AIInputApp:
                 except Exception as e:
                     log.warning("卸载旧转写模型失败: %s", e)
 
-            # 5. 用工厂方法重建转写器
+            # 同时卸载流式转写器（如果存在且与 _transcriber 不同）
+            if (self._streaming_transcriber
+                    and self._streaming_transcriber is not self._transcriber
+                    and hasattr(self._streaming_transcriber, 'unload')):
+                try:
+                    self._streaming_transcriber.unload()
+                except Exception as e:
+                    log.warning("卸载旧流式转写模型失败: %s", e)
+
+            # 5. 更新语言设置（必须在 _create_transcriber 之前，因为工厂方法会读取 self._language）
+            self._language = polish_cfg.get("language", "zh")
+
+            # 6. 用工厂方法重建转写器（内部会设置 _is_streaming_mode 和 _streaming_transcriber）
             self._transcriber = self._create_transcriber(stt_cfg, azure_cfg)
 
-            # 6. 重建/移除润色器
+            # 7. 重建/移除润色器
             self._polish_enabled = polish_cfg.get("enabled", True)
             if self._polish_enabled:
                 self._polisher = Polisher(
@@ -671,10 +920,7 @@ class AIInputApp:
             else:
                 self._polisher = None
 
-            # 7. 更新语言设置
-            self._language = polish_cfg.get("language", "zh")
-
-            # 8. 更新录音参数（下次录音时生效）
+            # 8. 更新录音参数（下次录音时生效，语言已在步骤 5 更新）
             self._recorder.sample_rate = rec_cfg["sample_rate"]
             self._recorder.channels = rec_cfg["channels"]
             self._recorder.max_duration = rec_cfg["max_duration"]

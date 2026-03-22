@@ -37,6 +37,7 @@ MODEL_REGISTRY = {
         "download_size_mb": 156,
         "required_files": ["model.int8.onnx", "tokens.txt"],
         "description": "中/英/日/韩/粤，速度快，中文质量最佳",
+        "streaming": False,
     },
     "whisper_small": {
         "display_name": "Whisper Small（多语言通用）",
@@ -52,6 +53,19 @@ MODEL_REGISTRY = {
             "small-tokens.txt",
         ],
         "description": "支持 99 种语言，质量好",
+        "streaming": False,
+    },
+    "paraformer_streaming": {
+        "display_name": "Paraformer 流式（实时转写·中英双语）",
+        "download_url": (
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
+            "asr-models/sherpa-onnx-streaming-paraformer-bilingual-zh-en.tar.bz2"
+        ),
+        "archive_dir": "sherpa-onnx-streaming-paraformer-bilingual-zh-en",
+        "download_size_mb": 999,
+        "required_files": ["encoder.int8.onnx", "decoder.int8.onnx", "tokens.txt"],
+        "description": "中英双语流式，边说边出字",
+        "streaming": True,
     },
 }
 

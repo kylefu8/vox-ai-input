@@ -14,23 +14,14 @@ from src.logger import setup_logger
 log = setup_logger(__name__)
 
 # 润色的系统提示词（多语言通用）
-POLISH_SYSTEM_PROMPT = """你是一个语音输入后处理助手。对语音转写的文字进行最小化润色，保持原文的语言不变：
-1. 保留原意，不增删实质内容
-2. 保持原文的语言（英文输入输出英文，中文输入输出中文，其他语言同理）
-3. 补充标点符号
-4. 纠正语音识别导致的错误（同音字、拼写错误等）
-5. 去除口语填充词（如中文的"嗯、那个、就是说"，英文的"um, uh, you know, like"等）
-6. 保留混合语言中的外语词汇：品牌名、技术术语、人名保持原样
-7. 口述的符号名称转为实际符号，例如：
-   - "at" 或 "艾特" → @
-   - "hashtag" 或 "井号" → #
-   - "slash" 或 "斜杠" → /
-   - "dot" 或 "点"（在邮箱/网址语境中）→ .
-   - "underscore" 或 "下划线" → _
-8. 不要过度正式化，不添加额外信息
-9. 不要将原文翻译成其他语言
-10. 原文已经很好则原样返回
-只输出润色后的纯文本。"""
+# 注意：不包含翻译相关指令，翻译指令由 build_prompt() 根据配置动态追加
+POLISH_SYSTEM_PROMPT = """修正语音转写文字。
+
+修正：补标点 | 纠同音字/拼写 | 去填充词（嗯/那个/um/uh/you know） | 口述符号→实际符号（艾特→@ 点→. 井号→# 斜杠→/） | 中文数字→阿拉伯数字（一千两百→1200、百分之十五→15%）
+格式：超过3句时在语义转折处分段
+禁止：改原意 | 加内容 | 过度正式化
+
+只输出纯文本。"""
 
 # 支持的翻译语言映射
 TRANSLATE_LANGUAGES = {
@@ -43,6 +34,11 @@ TRANSLATE_LANGUAGES = {
 def build_prompt(base_prompt="", translate_to="", show_original=False):
     """
     组合最终的 system prompt。
+
+    逻辑：
+    - 无翻译：基础润色 + 「保持原始语言，禁止翻译」
+    - 仅翻译：基础润色 + 翻译指令（只输出译文）
+    - 翻译+显示原文：基础润色 + 翻译指令（原文+译文双输出）
 
     Args:
         base_prompt: 基础润色提示词，空=用默认
@@ -58,25 +54,25 @@ def build_prompt(base_prompt="", translate_to="", show_original=False):
         lang_name = TRANSLATE_LANGUAGES[translate_to]
         if show_original:
             prompt += (
-                f"\n\n=== 翻译指令（必须严格遵守）==="
-                f"\n步骤1: 先对原文进行润色（保持原文的语言不变）"
-                f"\n步骤2: 将润色后的原文翻译为{lang_name}"
-                f"\n步骤3: 按以下格式输出，不要添加任何标签或序号："
-                f"\n"
-                f"\n润色后的原文（保持原始语言）"
-                f"\n"
-                f"\n{lang_name}翻译"
-                f"\n"
-                f"\n两段之间用一个空行分隔。禁止添加「原文：」「翻译：」等前缀。"
+                f"\n\n翻译规则：先润色原文，再翻译为{lang_name}。必须同时输出两段。"
+                f"\n输出格式：第一段为润色后的原文（保持原始语言，中英混合中的英文术语保留原样），空一行，第二段为{lang_name}翻译。"
+                f"\n即使原文很短（如「好的」），也必须输出两段。禁止添加「原文：」「翻译：」等前缀标签。"
             )
         else:
             prompt += (
-                f"\n\n=== 翻译指令（必须严格遵守）==="
-                f"\n步骤1: 先对原文进行润色"
-                f"\n步骤2: 将润色结果翻译为{lang_name}"
-                f"\n步骤3: 只输出{lang_name}翻译结果"
-                f"\n禁止输出润色后的原文。禁止输出任何解释。只输出纯{lang_name}文本。"
+                f"\n\n翻译规则：先润色原文，再翻译为{lang_name}。只输出{lang_name}翻译结果。"
+                f"\n如果原文已经是{lang_name}，则只做润色不翻译。"
+                f"\n禁止输出润色后的原文，禁止输出任何解释。"
             )
+    else:
+        # 无翻译时：在 prompt 最前面插入英文语言规则
+        # 放在最前面比放在最后面更有效——模型对开头的指令更敏感
+        prompt = (
+            "CRITICAL: Output language must match input language. "
+            "English input → English output. Chinese input → Chinese output. "
+            "Never translate.\n\n"
+            + prompt
+        )
 
     return prompt
 
@@ -146,7 +142,7 @@ class Polisher:
                     {"role": "user", "content": raw_text},
                 ],
                 temperature=0,  # 润色任务不需要创造性，0 最快最确定
-                max_tokens=estimated_tokens,
+                max_completion_tokens=estimated_tokens,
             )
 
             polished = response.choices[0].message.content.strip()
@@ -221,7 +217,7 @@ class Polisher:
                     {"role": "user", "content": text},
                 ],
                 temperature=0,
-                max_tokens=estimated_tokens,
+                max_completion_tokens=estimated_tokens,
             )
 
             translated = response.choices[0].message.content.strip()

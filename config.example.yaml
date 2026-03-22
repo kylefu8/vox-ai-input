@@ -5,10 +5,12 @@
 stt:
     # 后端: "azure"（云端）或 "local"（本地离线）
     backend: "azure"
-    # 本地模型类型: "sense_voice"（推荐·中文最佳）或 "whisper_small"
+    # 本地模型类型: "sense_voice"（推荐·中文最佳）或 "whisper_small" 或 "paraformer_streaming"
     model_type: "sense_voice"
     # 本地推理线程数（建议设为 CPU 核心数的一半）
     num_threads: 4
+    # 是否启用流式转写（仅 Paraformer 流式模型支持，边说边出字）
+    streaming: false
 
 azure:
     # Azure OpenAI 服务端点（不含 /openai/... 后缀）
@@ -70,6 +72,8 @@ polish:
     # 翻译目标语言（留空=不翻译）
     # 可选值: zh(简体中文) en(英语) ja(日语) ko(韩语) fr(法语) de(德语) es(西班牙语) ru(俄语) zh-TW(繁体中文)
     translate_to: ""
+    # 翻译时是否同时输出原文（true=先原文再译文，false=只输出译文）
+    show_original: false
     # 自定义润色提示词（留空=使用内置默认 prompt）
     # system_prompt: ""
 

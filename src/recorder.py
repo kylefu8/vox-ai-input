@@ -228,19 +228,23 @@ class Recorder:
         self._on_auto_stop = None
         # 倒计时开始时的回调函数
         self._on_countdown = None
+        # 音频 chunk 回调函数（流式转写用）
+        self._on_audio_chunk = None
 
     @property
     def is_recording(self):
         """当前是否正在录音。"""
         return self._is_recording
 
-    def start(self, on_auto_stop=None, on_countdown=None):
+    def start(self, on_auto_stop=None, on_countdown=None, on_audio_chunk=None):
         """
         开始录音。
 
         Args:
             on_auto_stop: 可选回调函数，当录音达到最大时长自动停止时调用
             on_countdown: 可选回调函数(seconds)，倒计时开始时调用
+            on_audio_chunk: 可选回调函数(chunk, sample_rate)，每收到一块音频时调用
+                           用于流式转写模式，将音频实时喂给转写器
 
         Returns:
             bool: 是否成功开始录音
@@ -255,6 +259,7 @@ class Recorder:
                 self._audio_chunks = []
                 self._on_auto_stop = on_auto_stop
                 self._on_countdown = on_countdown
+                self._on_audio_chunk = on_audio_chunk
 
                 # 创建音频输入流（回调模式）
                 self._stream = sd.InputStream(
@@ -387,8 +392,16 @@ class Recorder:
             log.warning("音频流状态异常: %s", status)
 
         # 复制一份数据存入缓冲区（indata 的内存会被复用）
+        chunk = indata.copy()
         with self._lock:
-            self._audio_chunks.append(indata.copy())
+            self._audio_chunks.append(chunk)
+
+        # 通知流式转写器（如果启用了流式模式）
+        if self._on_audio_chunk:
+            try:
+                self._on_audio_chunk(chunk, self.sample_rate)
+            except Exception:
+                pass  # 音频回调中绝不能抛异常
 
     def _save_to_wav(self, audio_data):
         """

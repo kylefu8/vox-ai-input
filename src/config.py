@@ -294,4 +294,5 @@ def get_stt_config(config):
         "backend": stt.get("backend", "azure"),
         "model_type": stt.get("model_type", "sense_voice"),
         "num_threads": stt.get("num_threads", 4),
+        "streaming": stt.get("streaming", False),
     }

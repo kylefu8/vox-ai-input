@@ -430,6 +430,7 @@ class SettingsWindow:
         cur_backend = stt.get("backend", "azure")
         cur_model = stt.get("model_type", "sense_voice")
         cur_threads = stt.get("num_threads", 4)
+        cur_streaming = stt.get("streaming", False)
 
         _lbl(parent, "🎙  转写引擎", fg=_C["accent"], font_size=11, bold=True, bg=_C["bg"]).pack(
             fill="x", pady=(0, 6))
@@ -451,7 +452,7 @@ class SettingsWindow:
         ).pack(anchor="w")
 
         tk.Radiobutton(
-            rb_frame, text="🖥️  本地离线（SenseVoice / Whisper）",
+            rb_frame, text="🖥️  本地离线（SenseVoice / Whisper / Paraformer）",
             variable=self._stt_backend_var, value="local",
             bg=_C["surface"], fg=_C["text"], selectcolor=_C["entry"],
             activebackground=_C["surface"], activeforeground=_C["text"],
@@ -476,6 +477,7 @@ class SettingsWindow:
                 bg=_C["surface"], fg=_C["text"], selectcolor=_C["entry"],
                 activebackground=_C["surface"], activeforeground=_C["text"],
                 font=("Segoe UI", 10),
+                command=self._on_stt_model_changed,
             ).pack(side="left")
 
             # 状态标签 + 操作按钮
@@ -504,6 +506,24 @@ class SettingsWindow:
 
             self._model_status_labels[model_name] = status_lbl
 
+        # 启用流式转写复选框
+        streaming_row = tk.Frame(self._local_panel, bg=_C["surface"])
+        streaming_row.pack(fill="x", pady=(8, 0), padx=(20, 0))
+        self._streaming_var = tk.BooleanVar(master=self._root, value=cur_streaming)
+        self._streaming_cb = tk.Checkbutton(
+            streaming_row, text="启用实时流式转写（边说边出字）",
+            variable=self._streaming_var,
+            bg=_C["surface"], fg=_C["text"], selectcolor=_C["entry"],
+            activebackground=_C["surface"], activeforeground=_C["text"],
+            font=("Segoe UI", 10),
+        )
+        self._streaming_cb.pack(side="left")
+        self._streaming_hint = _lbl(streaming_row, "需选择流式模型", font_size=9)
+        self._streaming_hint.pack(side="left", padx=(8, 0))
+
+        # 根据当前选中模型决定复选框状态
+        self._update_streaming_checkbox()
+
         # 线程数
         thread_row = tk.Frame(self._local_panel, bg=_C["surface"])
         thread_row.pack(fill="x", pady=(8, 0), padx=(20, 0))
@@ -530,6 +550,30 @@ class SettingsWindow:
         # 调整窗口大小
         self._root.update_idletasks()
         self._resize_height()
+
+    def _on_stt_model_changed(self):
+        """STT 模型单选按钮切换回调 — 更新流式复选框状态。"""
+        self._update_streaming_checkbox()
+
+    def _update_streaming_checkbox(self):
+        """
+        根据当前选中的模型更新流式转写复选框状态。
+
+        仅当选中的模型支持流式（streaming=True）时启用复选框。
+        """
+        from src.model_manager import MODEL_REGISTRY
+
+        model_name = self._stt_model_var.get()
+        model_info = MODEL_REGISTRY.get(model_name, {})
+        is_streaming_model = model_info.get("streaming", False)
+
+        if is_streaming_model:
+            self._streaming_cb.config(state="normal")
+            self._streaming_hint.config(text="", fg=_C["text2"])
+        else:
+            self._streaming_var.set(False)
+            self._streaming_cb.config(state="disabled")
+            self._streaming_hint.config(text="仅流式模型支持", fg=_C["text2"])
 
     def _download_model(self, model_name):
         """启动模型下载流程，显示进度对话框。"""
@@ -739,13 +783,19 @@ class SettingsWindow:
 
     @staticmethod
     def _strip_translate_suffix(p):
-        """去掉 prompt 末尾的所有翻译指令（支持所有历史格式）。"""
+        """去掉 prompt 中由 build_prompt() 动态追加的所有指令（翻译指令 + 语言规则）。"""
         import re
-        # 当前格式：「=== 翻译指令...」
+        # 新格式：开头的 CRITICAL 语言规则（无翻译模式 build_prompt 在最前面插入的）
+        p = re.sub(r"^CRITICAL:.*?Never translate\.\n\n", "", p, flags=re.DOTALL).strip()
+        # 新格式：末尾的翻译规则
+        p = re.sub(r"\n\n翻译规则：.+", "", p, flags=re.DOTALL).strip()
+        # 新格式：末尾的语言规则（无翻译模式的旧版尾部追加格式）
+        p = re.sub(r"\n\n语言规则：.+", "", p, flags=re.DOTALL).strip()
+        p = re.sub(r"\n\nIMPORTANT: Do NOT translate\..+", "", p, flags=re.DOTALL).strip()
+        p = re.sub(r"\n\nCRITICAL RULE: Output language.+", "", p, flags=re.DOTALL).strip()
+        # 旧格式兼容
         p = re.sub(r"\n\n=== 翻译指令.+", "", p, flags=re.DOTALL).strip()
-        # 旧格式：「重要指令：完成润色后...」
         p = re.sub(r"\n\n重要指令：完成润色后.+", "", p, flags=re.DOTALL).strip()
-        # 更旧格式：「最后，将润色后的文字翻译为...」
         p = re.sub(r"\n\n最后，将润色后的文字翻译为.+", "", p, flags=re.DOTALL).strip()
         return p
 
@@ -907,6 +957,10 @@ class SettingsWindow:
         if is_local:
             s["model_type"] = self._stt_model_var.get()
             s["num_threads"] = int(self._num_threads_var.get().strip())
+            s["streaming"] = self._streaming_var.get()
+        else:
+            # 切换到 Azure 时，显式关闭流式模式，避免残留旧值
+            s["streaming"] = False
 
         a = c.setdefault("azure", {})
         a["endpoint"] = ep
