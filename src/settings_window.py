@@ -977,6 +977,11 @@ class SettingsWindow:
         p["enabled"] = polish_enabled
         p["language"] = self._language_var.get().strip()
         p["system_prompt"] = self._strip_translate_suffix(self._prompt_text.get("1.0", "end-1c").strip())
+        # 如果用户没有修改过提示词（内容等于默认值），保存为空字符串
+        # 这样下次启动时 build_prompt() 会用代码中最新的默认 prompt
+        from src.polisher import POLISH_SYSTEM_PROMPT
+        if p["system_prompt"].strip() == POLISH_SYSTEM_PROMPT.strip():
+            p["system_prompt"] = ""
         tl = ""
         for lb, cd in self._translate_options:
             if lb == self._translate_var.get():

@@ -24,7 +24,7 @@ azure:
     whisper_deployment: "gpt-4o-mini-transcribe"
 
     # GPT 模型部署名称（用于文字润色）
-    gpt_deployment: "gpt-4o-mini"
+    gpt_deployment: "gpt-5.4-nano"
 
 # 录音设置
 recording:
