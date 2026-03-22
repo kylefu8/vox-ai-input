@@ -8,7 +8,7 @@
 
 支持中英文混合识别、口述符号自动转换（如"艾特" → @），AI 自动修正标点和语法，可选实时翻译到 9 种语言。
 
-> **v0.0.5 新增本地离线转写！** 集成 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 离线推理引擎，支持 SenseVoice（中文最佳）和 Whisper Small（多语言通用）模型，无需联网即可语音转文字。也可继续使用 Azure 云端转写（gpt-4o-mini-transcribe）。
+> **v0.0.6 流式实时转写 + 润色模型升级！** 新增 Paraformer 流式模型，边说边出字。润色模型从 gpt-4o-mini 升级到 gpt-5.4-nano——更快更便宜，不再回答问题或拒绝请求。
 
 ## 功能特性
 

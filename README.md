@@ -8,7 +8,7 @@
 
 Supports mixed Chinese-English recognition, spoken symbol conversion (e.g., "at sign" → @), AI-powered punctuation and grammar correction, and optional real-time translation to 9 languages.
 
-> **v0.0.5: Local offline transcription!** Integrated [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) for offline speech-to-text with SenseVoice (best for Chinese) and Whisper Small (99 languages). Also supports Azure cloud transcription (gpt-4o-mini-transcribe).
+> **v0.0.6: Streaming real-time transcription + polishing model upgrade!** New Paraformer streaming model for live speech-to-text (words appear as you speak). Polishing model upgraded from gpt-4o-mini to gpt-5.4-nano — faster, cheaper, and no longer answers questions or refuses requests.
 
 ## Features
 
