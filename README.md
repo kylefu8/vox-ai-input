@@ -1,226 +1,229 @@
 # Vox AI Input
 
-**AI 语音输入法** — 长按快捷键说话，松开后文字自动粘贴到当前应用。
+[中文文档](README_zh.md)
 
-> 🎤 说话 → 🤖 AI 转写 → ✨ AI 润色 → 🌐 翻译（可选）→ 📋 自动粘贴
+**AI Voice Input** — Hold a hotkey to speak, release to auto-paste transcribed text into any app.
 
-支持中英文混合识别、口述符号自动转换（如"艾特" → @），AI 自动修正标点和语法，可选实时翻译到 9 种语言。
+> 🎤 Speak → 🤖 AI Transcribe → ✨ AI Polish → 🌐 Translate (optional) → 📋 Auto-paste
 
-> **v0.0.5 新增本地离线转写！** 集成 [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) 离线推理引擎，支持 SenseVoice（中文最佳）和 Whisper Small（多语言通用）模型，无需联网即可语音转文字。也可继续使用 Azure 云端转写（gpt-4o-mini-transcribe）。
-## 功能特性
+Supports mixed Chinese-English recognition, spoken symbol conversion (e.g., "at sign" → @), AI-powered punctuation and grammar correction, and optional real-time translation to 9 languages.
 
-- **一键语音输入** — 长按快捷键说话，松开自动输出到当前应用
-- **🆕 本地离线转写** — 集成 sherpa-onnx，无需联网，延迟极低
-  - SenseVoice（推荐·中文最佳，~156MB）
-  - Whisper Small（多语言通用，~610MB）
-  - 设置窗口一键下载模型，Azure / 本地随时切换
-- **AI 智能润色** — 自动修正标点、语法、去口语填充词
-- **中英混合识别** — 中英文夹杂也能准确识别，技术术语保留英文
-- **符号口述转换** — 说"艾特"输出 @、说"井号"输出 #
-- **实时翻译** — 说中文出英文（支持 9 种语言），一步到位
-- **自定义 Prompt** — 高级设置中可自由编辑润色提示词
-- **录音倒计时** — 录音接近上限时屏幕右下角半透明倒数提示
-- **实时日志窗口** — 深色主题滚动日志，方便排查问题
-- **现代设置界面** — 深色/浅色主题一键切换，卡片式布局，所有配置可视化编辑
-- **程序图标** — Fluent 风格蓝紫渐变麦克风，应用到 exe、安装包、设置窗口
-- **快捷键热更新** — 修改快捷键立即生效，无需重启
-- **系统托盘常驻** — 渐变麦克风图标，状态一目了然
-- **一键检查更新** — 托盘菜单一键检查 GitHub 新版本
-- **配置热重载** — 所有设置修改后立即生效
-- **开机自启** — 可选开机自动启动
+> **v0.0.5: Local offline transcription!** Integrated [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) for offline speech-to-text with SenseVoice (best for Chinese) and Whisper Small (99 languages). Also supports Azure cloud transcription (gpt-4o-mini-transcribe).
 
-## 环境要求
+## Features
+
+- **One-key voice input** — Hold hotkey to speak, release to auto-paste
+- **🆕 Local offline transcription** — Powered by sherpa-onnx, no internet required, ultra-low latency
+  - SenseVoice (recommended, best for Chinese, ~156MB)
+  - Whisper Small (99 languages, ~610MB)
+  - One-click model download in settings, switch between Azure / local anytime
+- **AI smart polishing** — Auto-fix punctuation, grammar, remove filler words
+- **Mixed language recognition** — Accurately handles Chinese-English mixed speech
+- **Symbol dictation** — Say "at sign" to output @, "hash" to output #
+- **Real-time translation** — Speak in one language, output in another (9 languages supported)
+- **Custom prompt** — Edit polishing prompt in advanced settings
+- **Recording countdown** — Semi-transparent countdown overlay near max duration
+- **Live log window** — Dark-themed scrolling log for troubleshooting
+- **Modern settings UI** — Dark/light theme toggle, card-based layout
+- **App icon** — Fluent-style blue-purple gradient microphone
+- **Hotkey hot-reload** — Changes take effect immediately, no restart needed
+- **System tray** — Gradient microphone icon with status colors
+- **One-click updates** — Check for new GitHub releases from tray menu
+- **Config hot-reload** — All setting changes take effect immediately
+- **Auto-start** — Optional launch on system startup
+
+## Requirements
 
 - **Windows** 10/11 (x86_64)
-- **麦克风** 系统已授权访问
-- **转写引擎**（二选一）：
-  - 🖥️ **本地离线** — 无需额外配置，设置中下载模型即可使用
-  - ☁️ **Azure 云端** — 需要 [Azure AI Foundry](https://ai.azure.com/) 已部署 `gpt-4o-mini-transcribe` + `gpt-4o-mini`
+- **Microphone** with system access granted
+- **Transcription engine** (choose one):
+  - 🖥️ **Local offline** — No extra setup needed, download model in settings
+  - ☁️ **Azure cloud** — Requires [Azure AI Foundry](https://ai.azure.com/) with `gpt-4o-mini-transcribe` + `gpt-4o-mini` deployed
 
-## 快速开始
+## Quick Start
 
-### 方式一：安装包（推荐）
+### Option 1: Installer (Recommended)
 
-1. 从 [Releases](https://github.com/kylefu8/vox-ai-input/releases) 下载 `VoxAIInput-Setup-x.x.x.exe`
-2. 双击运行安装（支持桌面快捷方式 + 开机自启选项）
-3. 首次启动会自动创建 `config.yaml`，打开设置窗口填入 Azure API 信息
-4. 长按快捷键说话即可
+1. Download `VoxAIInput-Setup-x.x.x.exe` from [Releases](https://github.com/kylefu8/vox-ai-input/releases)
+2. Run the installer (supports desktop shortcut + auto-start options)
+3. On first launch, a settings window opens — fill in Azure API info or choose local transcription
+4. Hold the hotkey and start speaking
 
-### 方式二：免安装版
+### Option 2: Portable
 
-1. 下载 `VoxAIInput-x.x.x-win64.zip`
-2. 解压到任意目录
-3. 复制 `config.example.yaml` 为 `config.yaml`，填入 Azure 端点和 API Key
-4. 双击 `VoxAIInput.exe` 运行
+1. Download `VoxAIInput-x.x.x-win64.zip`
+2. Extract to any directory
+3. Copy `config.example.yaml` to `config.yaml`, fill in your settings
+4. Double-click `VoxAIInput.exe`
 
-### 方式三：从源码运行
+### Option 3: From Source
 
 ```powershell
-# 克隆
+# Clone
 git clone https://github.com/kylefu8/vox-ai-input.git
 cd vox-ai-input
 
-# 虚拟环境
+# Virtual environment
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 
-# 安装依赖
+# Install dependencies
 pip install -r requirements.txt
 
-# 配置
+# Configure
 Copy-Item config.example.yaml config.yaml
-# 编辑 config.yaml，填入 Azure 端点和 API Key
+# Edit config.yaml with your settings
 
-# 启动
+# Run
 python run.py
 ```
 
-## 使用方法
+## Usage
 
-| 操作 | 说明 |
-|------|------|
-| **长按快捷键** | 开始录音（托盘图标变红） |
-| **松开快捷键** | 停止录音 → 转写 → 润色 → 粘贴 |
-| **录音中按 Esc** | 取消当前录音 |
-| **托盘右键 → 设置** | 打开设置窗口 |
-| **托盘右键 → 日志** | 打开实时日志窗口 |
-| **托盘右键 → 检查更新** | 检查 GitHub 新版本 |
+| Action | Description |
+|--------|-------------|
+| **Hold hotkey** | Start recording (tray icon turns red) |
+| **Release hotkey** | Stop recording → transcribe → polish → paste |
+| **Press Esc while recording** | Cancel current recording |
+| **Tray right-click → Settings** | Open settings window |
+| **Tray right-click → Log** | Open live log window |
+| **Tray right-click → Check Updates** | Check for new GitHub releases |
 
-### 托盘图标状态
+### Tray Icon Status
 
-| 图标颜色 | 状态 |
+| Color | Status |
+|-------|--------|
+| Blue-gray | Idle, waiting for input |
+| Red | Recording |
+| Gold | Processing (transcribing + polishing) |
+
+### Translation
+
+Select a target language in the settings window under "Common Settings":
+
+| Language | Code |
 |----------|------|
-| 灰蓝 | 空闲，等待输入 |
-| 红色 | 录音中 |
-| 金黄 | 处理中（转写 + 润色） |
+| No translation | (default) |
+| Simplified Chinese / Traditional Chinese | zh / zh-TW |
+| English / Japanese / Korean | en / ja / ko |
+| French / German / Spanish / Russian | fr / de / es / ru |
 
-### 翻译功能
+Speech is automatically polished + translated in a single API call.
 
-在设置窗口的「常用设置」中选择翻译目标语言：
+### CLI Arguments
 
-| 语言 | 代码 |
-|------|------|
-| 不翻译 | （默认） |
-| 简体中文 / 繁体中文 | zh / zh-TW |
-| 英语 / 日语 / 韩语 | en / ja / ko |
-| 法语 / 德语 / 西班牙语 / 俄语 | fr / de / es / ru |
+| Argument | Description |
+|----------|-------------|
+| `python run.py` | Normal mode (tray) |
+| `python run.py --test` | Test mode (press Enter to control recording) |
+| `python run.py --visible` | Normal mode + keep console (for debugging) |
+| `python run.py --version` | Show version |
 
-选择后说话内容会自动润色 + 翻译为目标语言，一次 API 调用完成。
+## Configuration
 
-### 启动参数
+Edit `config.yaml` (or configure via the settings window on first launch):
 
-| 参数 | 说明 |
-|------|------|
-| `python run.py` | 正常模式（托盘运行） |
-| `python run.py --test` | 测试模式（按回车控制录音） |
-| `python run.py --visible` | 正常模式 + 保留控制台（调试用） |
-| `python run.py --version` | 显示版本号 |
+| Key | Description | Default |
+|-----|-------------|---------|
+| `stt.backend` | Transcription engine: `azure` (cloud) or `local` (offline) | `azure` |
+| `stt.model_type` | Local model: `sense_voice` or `whisper_small` | `sense_voice` |
+| `stt.num_threads` | Local inference threads | `4` |
+| `azure.endpoint` | Azure OpenAI endpoint URL | *required for cloud* |
+| `azure.api_key` | Azure OpenAI API Key | *required for cloud* |
+| `azure.api_version` | API version | `2025-01-01-preview` |
+| `azure.whisper_deployment` | Whisper model deployment name | `whisper` |
+| `azure.gpt_deployment` | GPT model deployment name | `gpt-4o-mini` |
+| `recording.sample_rate` | Sample rate (Hz) | `16000` |
+| `recording.channels` | Audio channels | `1` |
+| `recording.max_duration` | Max recording duration (seconds) | `60` |
+| `hotkey.combination` | Recording hotkey | `alt+z` |
+| `polish.enabled` | Enable AI polishing | `true` |
+| `polish.language` | Recognition language (empty = auto-detect) | `""` |
+| `polish.translate_to` | Translation target language code (empty = none) | `""` |
+| `polish.system_prompt` | Custom polishing prompt (empty = default) | `""` |
 
-## 配置说明
-
-编辑 `config.yaml`（首次可从设置窗口直接配置）：
-
-| 配置项 | 说明 | 默认值 |
-|--------|------|--------|
-| `stt.backend` | 转写引擎：`azure`（云端）或 `local`（本地离线） | `azure` |
-| `stt.model_type` | 本地模型：`sense_voice` 或 `whisper_small` | `sense_voice` |
-| `stt.num_threads` | 本地推理线程数 | `4` |
-| `azure.endpoint` | Azure OpenAI 端点 URL | *云端必填* |
-| `azure.api_key` | Azure OpenAI API Key | *云端必填* |
-| `azure.api_version` | API 版本 | `2025-01-01-preview` |
-| `azure.whisper_deployment` | 语音转写模型部署名 | `whisper` |
-| `azure.gpt_deployment` | GPT 润色模型部署名 | `gpt-4o-mini` |
-| `recording.sample_rate` | 采样率 (Hz) | `16000` |
-| `recording.channels` | 声道数 | `1` |
-| `recording.max_duration` | 最长录音秒数 | `60` |
-| `hotkey.combination` | 录音快捷键 | `alt+z` |
-| `polish.enabled` | 是否启用 AI 润色 | `true` |
-| `polish.language` | 语音识别语言（留空自动检测） | `""` |
-| `polish.translate_to` | 翻译目标语言代码（留空不翻译） | `""` |
-| `polish.system_prompt` | 自定义润色提示词（留空用默认） | `""` |
-
-## 项目结构
+## Project Structure
 
 ```
 vox-ai-input/
-├── run.py                  # 程序入口
-├── build.spec              # PyInstaller 打包配置（--onedir）
-├── installer.iss           # Inno Setup 安装包脚本
-├── config.example.yaml     # 配置模板
-├── requirements.txt        # 运行依赖
+├── run.py                  # Entry point
+├── build.spec              # PyInstaller config (--onedir)
+├── installer.iss           # Inno Setup installer script
+├── config.example.yaml     # Config template
+├── requirements.txt        # Runtime dependencies
 ├── src/
-│   ├── app.py              # 主控制器，协调所有模块
-│   ├── config.py           # 配置加载、保存与验证
-│   ├── recorder.py         # 麦克风录音 + 设备检测
-│   ├── transcriber.py      # Azure 语音转文字
-│   ├── local_transcriber.py # 本地离线语音转文字（sherpa-onnx）
-│   ├── model_manager.py    # 本地模型下载与管理
-│   ├── polisher.py         # AI 文字润色 + 翻译
-│   ├── hotkey.py           # 全局热键监听
-│   ├── output.py           # 剪贴板 + 模拟粘贴
-│   ├── tray.py             # 系统托盘（渐变麦克风图标）
-│   ├── settings_window.py  # 深色主题设置窗口
-│   ├── log_window.py       # 实时日志查看窗口
-│   ├── countdown.py        # 录音倒计时浮窗（Win32 Layered Window）
-│   ├── updater.py          # GitHub 版本检查与更新
-│   ├── notifier.py         # 提示音播放
-│   ├── autostart.py        # 开机自启管理
-│   ├── azure_client.py     # Azure OpenAI 客户端工厂
-│   ├── paths.py            # 路径工具（兼容打包/源码模式）
-│   ├── interfaces.py       # Protocol 接口定义
-│   └── logger.py           # 统一日志（UTF-8 安全）
-├── tests/                  # 120+ 测试用例
-├── models/                 # 本地 STT 模型（用户按需下载，不含在 git 中）
-├── assets/sounds/          # 录音提示音
-├── scripts/                # 构建辅助脚本
+│   ├── app.py              # Main controller
+│   ├── config.py           # Config loading, saving, validation
+│   ├── recorder.py         # Microphone recording + device detection
+│   ├── transcriber.py      # Azure speech-to-text
+│   ├── local_transcriber.py # Local offline STT (sherpa-onnx)
+│   ├── model_manager.py    # Local model download & management
+│   ├── polisher.py         # AI text polishing + translation
+│   ├── hotkey.py           # Global hotkey listener
+│   ├── output.py           # Clipboard + simulated paste
+│   ├── tray.py             # System tray (gradient microphone icon)
+│   ├── settings_window.py  # Dark-themed settings window
+│   ├── log_window.py       # Live log viewer
+│   ├── countdown.py        # Recording countdown overlay (Win32 Layered Window)
+│   ├── updater.py          # GitHub version check & update
+│   ├── notifier.py         # Sound notifications
+│   ├── autostart.py        # Auto-start management
+│   ├── azure_client.py     # Azure OpenAI client factory
+│   ├── paths.py            # Path utilities (compatible with packaged/source modes)
+│   ├── interfaces.py       # Protocol interface definitions
+│   └── logger.py           # Unified logging (UTF-8 safe)
+├── tests/                  # 120+ test cases
+├── models/                 # Local STT models (user downloads on demand, not in git)
+├── assets/sounds/          # Recording notification sounds
+├── scripts/                # Build helper scripts
 └── .github/workflows/      # GitHub Actions CI/CD
 ```
 
-## 开发
+## Development
 
 ```powershell
-# 安装开发依赖
+# Install dev dependencies
 pip install -r requirements-dev.txt
 
-# 运行测试
+# Run tests
 python -m pytest tests/ -v
 
-# 本地构建 exe
+# Local build
 pip install pyinstaller pyinstaller-hooks-contrib
 pyinstaller build.spec --clean --noconfirm
-# 产物在 dist/VoxAIInput/
+# Output in dist/VoxAIInput/
 ```
 
-## 常见问题
+## FAQ
 
-**快捷键不生效**
-- 确认没有其他程序占用该快捷键
-- 托盘右键 → 设置 → 录制新快捷键，保存后立即生效
+**Hotkey not working**
+- Make sure no other app is using the same hotkey
+- Tray right-click → Settings → Record a new hotkey, save to apply immediately
 
-**粘贴时目标应用没反应**
-- 部分以管理员权限运行的程序可能无法接收模拟按键
-- 尝试以管理员身份运行 Vox AI Input
+**Paste not working in target app**
+- Some apps running with admin privileges may block simulated keystrokes
+- Try running Vox AI Input as administrator
 
-**翻译没生效**
-- 确认设置中翻译下拉选择了目标语言并保存
-- 展开高级设置检查 prompt 末尾是否有翻译指令
+**Translation not working**
+- Confirm a target language is selected in settings and saved
+- Expand advanced settings to check if the translation instruction appears in the prompt
 
-**RDP 远程桌面无法录音**
-- RDP 默认不转发麦克风，需在 RDP 客户端 → 本地资源 → 远程音频 → 设置 → 开启「从此计算机录制」
+**Cannot record via RDP**
+- RDP does not forward the microphone by default — in the RDP client: Local Resources → Remote Audio → Settings → enable "Record from this computer"
 
-**录音太短被跳过**
-- 录音不足 0.3 秒会被视为误触而跳过
+**Recording too short, skipped**
+- Recordings shorter than 0.3 seconds are treated as accidental triggers and skipped
 
-## 技术栈
+## Tech Stack
 
-- **语言**: Python 3.10+
-- **语音转写**: 本地 sherpa-onnx（SenseVoice / Whisper Small）或 Azure AI Foundry (gpt-4o-mini-transcribe)
-- **文字润色 + 翻译**: Azure AI Foundry (gpt-4o-mini)
-- **热键监听**: pynput
-- **录音**: sounddevice + soundfile
-- **UI**: tkinter（深色主题设置窗口 + 日志窗口）+ pystray（系统托盘）
-- **倒计时浮窗**: Win32 Layered Window（逐像素 Alpha 透明）
-- **打包**: PyInstaller（--onedir）+ Inno Setup（安装包）
+- **Language**: Python 3.10+
+- **Speech-to-text**: Local sherpa-onnx (SenseVoice / Whisper Small) or Azure AI Foundry (gpt-4o-mini-transcribe)
+- **Text polishing + translation**: Azure AI Foundry (gpt-4o-mini)
+- **Hotkey listener**: pynput
+- **Recording**: sounddevice + soundfile
+- **UI**: tkinter (dark-themed settings + log windows) + pystray (system tray)
+- **Countdown overlay**: Win32 Layered Window (per-pixel alpha transparency)
+- **Packaging**: PyInstaller (--onedir) + Inno Setup (installer)
 - **CI/CD**: GitHub Actions
 
 ## License
