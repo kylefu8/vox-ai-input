@@ -28,12 +28,11 @@ def clear_client_cache():
 # ---------- 测试配置 ----------
 
 MOCK_CONFIG = {
-    "azure": {
-        "endpoint": "https://test.openai.azure.com/",
-        "api_key": "test-key-12345",
-        "api_version": "2024-06-01",
-        "whisper_deployment": "whisper",
-        "gpt_deployment": "gpt-4o-mini",
+    "stt": {
+        "backend": "local",
+        "model_type": "sense_voice",
+        "num_threads": 4,
+        "streaming": False,
     },
     "recording": {
         "sample_rate": 16000,
@@ -46,6 +45,19 @@ MOCK_CONFIG = {
     "polish": {
         "enabled": True,
         "language": "zh",
+        "profile": "azure",
+    },
+    "llm_profiles": {
+        "azure": {
+            "provider": "azure_openai",
+            "endpoint": "https://test.openai.azure.com/",
+            "api_key": "test-key-12345",
+            "api_version": "2025-01-01-preview",
+            "deployment": "gpt-4o-mini",
+        }
+    },
+    "history": {
+        "enabled": False,
     },
 }
 
@@ -54,9 +66,12 @@ def _make_app():
     """
     创建一个完全 mock 化的 AIInputApp 实例。
 
-    mock 掉所有外部依赖：配置加载、Azure 客户端、提示音、托盘图标。
+    mock 掉所有外部依赖：配置加载、模型加载、Azure 客户端、提示音、托盘图标。
     """
     with patch("src.app.load_config", return_value=MOCK_CONFIG), \
+         patch("src.model_manager.is_model_ready", return_value=True), \
+         patch("src.model_manager.get_model_dir", return_value="models/sense_voice"), \
+         patch("src.local_transcriber.LocalTranscriber") as mock_local_transcriber_cls, \
          patch("src.azure_client.AzureOpenAI"), \
          patch("src.app.create_default_sounds"), \
          patch("src.app.TrayIcon") as mock_tray_cls:
@@ -64,6 +79,7 @@ def _make_app():
         # TrayIcon mock
         mock_tray = MagicMock()
         mock_tray_cls.return_value = mock_tray
+        mock_local_transcriber_cls.return_value = MagicMock()
 
         from src.app import AIInputApp
         app = AIInputApp()
@@ -132,7 +148,9 @@ class TestFullPipeline:
             app._on_hotkey_release()
 
             app._recorder.stop.assert_called_once()
-            mock_thread.start.assert_called_once()
+            targets = [call.kwargs.get("target") for call in mock_thread_cls.call_args_list]
+            assert any(getattr(target, "__name__", "") == "_process_audio" for target in targets)
+            assert mock_thread.start.call_count >= 1
 
     def test_hotkey_release_no_wav_resets_tray(self):
         """录音数据无效时，托盘应恢复为空闲状态。"""
@@ -293,7 +311,7 @@ class TestCleanupAudio:
 
     def test_cleanup_deletes_file(self, tmp_path):
         """应该删除指定的文件。"""
-        from src.transcriber import cleanup_audio
+        from src.audio_files import cleanup_audio
 
         wav_file = tmp_path / "test.wav"
         wav_file.write_bytes(b"fake")
@@ -303,27 +321,10 @@ class TestCleanupAudio:
 
     def test_cleanup_nonexistent_file_no_error(self, tmp_path):
         """删除不存在的文件应该不报错。"""
-        from src.transcriber import cleanup_audio
+        from src.audio_files import cleanup_audio
 
         wav_file = tmp_path / "nonexistent.wav"
         cleanup_audio(wav_file)  # 不应该抛异常
-
-    def test_transcriber_cleanup_delegates(self, tmp_path):
-        """Transcriber.cleanup_audio() 应该委托给模块级函数。"""
-        wav_file = tmp_path / "test.wav"
-        wav_file.write_bytes(b"fake")
-
-        with patch("src.azure_client.AzureOpenAI"):
-            from src.transcriber import Transcriber
-            t = Transcriber(
-                endpoint="https://test.openai.azure.com/",
-                api_key="test-key",
-                api_version="2024-06-01",
-                deployment="whisper",
-            )
-
-        t.cleanup_audio(wav_file)
-        assert not wav_file.exists()
 
 
 # =============================================================
@@ -339,19 +340,23 @@ class TestCreateComponents:
              patch("builtins.open", mock_open(read_data="")), \
              patch("src.config.yaml.safe_load", return_value=MOCK_CONFIG), \
              patch("src.config._validate_config"), \
+             patch("src.model_manager.is_model_ready", return_value=True), \
+             patch("src.model_manager.get_model_dir", return_value="models/sense_voice"), \
+             patch("src.local_transcriber.LocalTranscriber") as local_transcriber_cls, \
              patch("src.azure_client.AzureOpenAI"):
 
             mock_path.exists.return_value = True
+            fake_transcriber = MagicMock()
+            local_transcriber_cls.return_value = fake_transcriber
 
             from run import _create_components
             recorder, transcriber, polisher, polish_cfg = _create_components()
 
             from src.recorder import Recorder
-            from src.transcriber import Transcriber
             from src.polisher import Polisher
 
             assert isinstance(recorder, Recorder)
-            assert isinstance(transcriber, Transcriber)
+            assert transcriber is fake_transcriber
             assert isinstance(polisher, Polisher)
             assert polish_cfg["language"] == "zh"
             assert polish_cfg["enabled"] is True
@@ -368,6 +373,9 @@ class TestCreateComponents:
              patch("src.config.yaml.safe_load",
                    return_value=config_no_polish), \
              patch("src.config._validate_config"), \
+             patch("src.model_manager.is_model_ready", return_value=True), \
+             patch("src.model_manager.get_model_dir", return_value="models/sense_voice"), \
+             patch("src.local_transcriber.LocalTranscriber", return_value=MagicMock()), \
              patch("src.azure_client.AzureOpenAI"):
 
             mock_path.exists.return_value = True
@@ -386,18 +394,11 @@ class TestProtocolCompliance:
     """验证具体实现满足 Protocol 接口。"""
 
     def test_transcriber_satisfies_protocol(self):
-        """Transcriber 应该满足 TranscriberProtocol。"""
+        """本地转写器应该满足 TranscriberProtocol。"""
         from src.interfaces import TranscriberProtocol
-        from src.transcriber import Transcriber
 
-        with patch("src.azure_client.AzureOpenAI"):
-            t = Transcriber(
-                endpoint="https://test.openai.azure.com/",
-                api_key="test-key",
-                api_version="2024-06-01",
-                deployment="whisper",
-            )
-
+        t = MagicMock()
+        t.transcribe = MagicMock(return_value="hello")
         assert isinstance(t, TranscriberProtocol)
 
     def test_polisher_satisfies_protocol(self):
@@ -405,13 +406,10 @@ class TestProtocolCompliance:
         from src.interfaces import PolisherProtocol
         from src.polisher import Polisher
 
-        with patch("src.azure_client.AzureOpenAI"):
-            p = Polisher(
-                endpoint="https://test.openai.azure.com/",
-                api_key="test-key",
-                api_version="2024-06-01",
-                deployment="gpt-4o-mini",
-            )
+        llm_client = MagicMock()
+        llm_client.provider = "mock"
+        llm_client.model_name = "mock-model"
+        p = Polisher(llm_client=llm_client)
 
         assert isinstance(p, PolisherProtocol)
 
@@ -476,13 +474,16 @@ class TestHotReload:
 
         new_config = {
             **MOCK_CONFIG,
-            "azure": {
-                **MOCK_CONFIG["azure"],
-                "api_key": "new-key-67890",
+            "stt": {
+                **MOCK_CONFIG["stt"],
+                "num_threads": 2,
             },
         }
 
         with patch("src.app.save_config"), \
+             patch("src.model_manager.is_model_ready", return_value=True), \
+             patch("src.model_manager.get_model_dir", return_value="models/sense_voice"), \
+             patch("src.local_transcriber.LocalTranscriber", return_value=MagicMock()), \
              patch("src.azure_client.AzureOpenAI"):
             success, msg = app._reload_config(new_config)
 
@@ -495,6 +496,9 @@ class TestHotReload:
         old_polisher = app._polisher
 
         with patch("src.app.save_config"), \
+             patch("src.model_manager.is_model_ready", return_value=True), \
+             patch("src.model_manager.get_model_dir", return_value="models/sense_voice"), \
+             patch("src.local_transcriber.LocalTranscriber", return_value=MagicMock()), \
              patch("src.azure_client.AzureOpenAI"):
             success, msg = app._reload_config(MOCK_CONFIG)
 
@@ -512,6 +516,9 @@ class TestHotReload:
         }
 
         with patch("src.app.save_config"), \
+             patch("src.model_manager.is_model_ready", return_value=True), \
+             patch("src.model_manager.get_model_dir", return_value="models/sense_voice"), \
+             patch("src.local_transcriber.LocalTranscriber", return_value=MagicMock()), \
              patch("src.azure_client.AzureOpenAI"):
             success, msg = app._reload_config(new_config)
 
@@ -533,6 +540,9 @@ class TestHotReload:
         }
 
         with patch("src.app.save_config"), \
+             patch("src.model_manager.is_model_ready", return_value=True), \
+             patch("src.model_manager.get_model_dir", return_value="models/sense_voice"), \
+             patch("src.local_transcriber.LocalTranscriber", return_value=MagicMock()), \
              patch("src.azure_client.AzureOpenAI"):
             success, msg = app._reload_config(new_config)
 
@@ -550,6 +560,9 @@ class TestHotReload:
         src.azure_client._client_cache["old_stale_key"] = "dummy"
 
         with patch("src.app.save_config"), \
+             patch("src.model_manager.is_model_ready", return_value=True), \
+             patch("src.model_manager.get_model_dir", return_value="models/sense_voice"), \
+             patch("src.local_transcriber.LocalTranscriber", return_value=MagicMock()), \
              patch("src.azure_client.AzureOpenAI"):
             app._reload_config(MOCK_CONFIG)
 

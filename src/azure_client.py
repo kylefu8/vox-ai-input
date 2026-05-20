@@ -1,7 +1,7 @@
 """
 Azure OpenAI 客户端工厂
 
-提供共享的 AzureOpenAI 客户端实例，避免 Transcriber 和 Polisher 各自重复创建。
+提供共享的 AzureOpenAI 客户端实例，供 Azure OpenAI 润色 profile 复用。
 """
 
 import hashlib

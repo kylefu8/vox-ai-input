@@ -2,7 +2,7 @@
 抽象接口定义
 
 定义 Transcriber 和 Polisher 的接口协议（Protocol），
-让具体实现（Azure / OpenAI / 本地模型等）可以自由替换。
+让具体实现（本地模型、不同 LLM provider 等）可以自由替换。
 
 使用 Python 的 Protocol 而不是 ABC，因为 Protocol 支持结构化子类型（鸭子类型），
 不强制继承，更灵活。
@@ -18,7 +18,7 @@ class TranscriberProtocol(Protocol):
     语音转文字接口。
 
     任何实现了 transcribe 方法的类都自动满足此协议。
-    cleanup_audio 已移至 transcriber 模块级函数，不再属于接口。
+    cleanup_audio 已移至 audio_files 模块级函数，不再属于接口。
     """
 
     def transcribe(self, audio_path: Path | str, language: str = "zh") -> str | None:

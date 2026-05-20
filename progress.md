@@ -1,0 +1,51 @@
+# 进度记录
+
+## 2026-05-20
+- 开始收口“润色设置合并 + API profile 简化”改动。
+- 设置窗口移除了旧 profile 管理残留，当前只编辑一个 default profile。
+- LLM profile 保存为通用 endpoint/api_key/model，客户端创建时自动映射 Azure/OpenAI-compatible/Anthropic。
+- 配置模板和 README 已改为简化 API 设置说明。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 目标测试通过：`78 passed in 18.35s`。
+- 回归集合通过：`94 passed in 18.42s`。
+- 已清理 `.pytest_cache`、`__pycache__` 和 `data` 临时目录。
+- 已从 upstream 目录启动新版应用；venv launcher PID 65736，实际 Python 子进程 PID 22776。
+- 根据用户反馈，设置窗口改为单页滚动，左侧按钮只负责跳转到对应段落。
+- 底部保存/取消操作栏保留在滚动区域之外，始终可见。
+- 编译检查再次通过。
+- 设置/配置/LLM 相关测试通过：`42 passed in 2.11s`。
+- 用户反馈历史记录和概览不应混在设置页；已记录为下一轮信息架构调整。
+- 设置窗口删除概览段，改成左侧主类目 + 右侧横向 tabs。
+- 历史记录不再使用独立窗口；托盘“历史记录”会打开同一个主窗口并定位到“数据 / 历史记录”tab。
+- “数据”类目包含“历史记录”和“保存策略”两个横向 tab，记录页支持刷新、复制和清空后的即时刷新。
+- 编译检查通过；相关测试通过：`70 passed in 52.96s`。
+- 按用户反馈取消独立历史窗口文件，改为同一主窗口内横向 tabs。
+- 编译检查通过；相关测试通过：`70 passed in 45.96s`。
+- 已重启新版应用；venv launcher PID 54392，实际 Python 子进程 PID 33300。
+- 按用户反馈继续做设置窗口审美重做：引入 graphite/cyan 控制台风格，新增本地优先状态 pill、分区标题、连接状态面板、模型列表卡片、历史记录列表和固定底部保存条。
+- 移除设置窗口中残余 emoji 式状态图标，统一成更克制的桌面工具文案。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 相关回归通过：`70 passed in 21.76s`。
+- 已清理测试缓存和临时 data 目录。
+- 已重启新版应用；venv launcher PID 21840，实际 Python 子进程 PID 38028。
+- 根据用户反馈“文字不够清晰”，定位到 Windows DPI 缩放下 Tkinter 可能被系统位图放大，同时暗色主题次级文字偏灰。
+- 在 `run.py` 启动早期增加 Windows DPI awareness 设置；在设置窗口显式配置 Segoe UI 字体，并提高暗色主题次级文字/边框对比度。
+- 编译检查通过；相关测试通过：`66 passed in 14.72s`。
+- 已清理测试缓存和临时 data 目录。
+- 已重启新版应用；venv launcher PID 26548，实际 Python 子进程 PID 68592。
+
+## 2026-05-21
+- 根据功能 review 开始设置瘦身：删除 `python run.py --setup` 旧 Web 配置向导入口，并删除已落后于新架构的 `src/setup_ui.py`。
+- 从默认配置和文档中移除未生效的 `output.paste_method`、未开放的 `wakeword` 配置，以及录音设备/音频后端/静音阈值等未被主流程读取的旧字段。
+- 删除未引用的 `src/wakeword.py` 实验模块。
+- 设置窗口瘦身为 4 个主类目：转写模型、润色连接、快捷键、历史；隐藏推理线程数、流式开关、识别语言和 prompt 编辑器，Paraformer 模型会自动启用流式。
+- 历史记录与保留条数合并到同一个“数据/历史”页面，不再有单独保存策略 tab。
+- 配置默认 profile 从旧 `azure` 收敛为 `default`，识别语言默认改为空字符串以交给本地模型自动判断。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 相关测试通过：`87 passed in 23.98s`；全量测试通过：`143 passed in 23.17s`。
+- 已清理测试缓存和临时 data 目录。
+- 已重启新版应用；venv launcher PID 67696，实际 Python 子进程 PID 59808。
+- 发布收口：将 `run.py` 和 `installer.iss` 版本号更新为 `0.0.7`。
+- 新增 `_release_note_v0.0.7.md`，记录本地优先重构、润色 API 简化、设置 UI 重做和清理项。
+- README / README_zh 顶部版本摘要更新为 v0.0.7，并同步当前本地转写、多 endpoint 润色和设置瘦身说明。
+- 发布前全量测试通过：`143 passed in 16.85s`。

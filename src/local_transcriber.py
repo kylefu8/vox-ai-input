@@ -3,7 +3,7 @@
 
 使用 sherpa-onnx 离线推理引擎进行语音转写，无需网络连接。
 支持 SenseVoice（中文最佳）和 Whisper Small（多语言通用）两种模型。
-实现了 TranscriberProtocol 接口（鸭子类型），可无缝替换 Azure Transcriber。
+实现了 TranscriberProtocol 接口（鸭子类型），作为默认本地转写引擎。
 
 线程安全：推理过程通过 _infer_lock 加锁，避免并发调用冲突。
 """
@@ -53,7 +53,7 @@ class LocalTranscriber:
         except ImportError:
             raise RuntimeError(
                 "sherpa-onnx 未安装。请运行: pip install sherpa-onnx\n"
-                "或在设置中切换回 Azure 云端转写。"
+                "或在设置中选择已下载的本地模型。"
             )
 
         # 根据模型类型创建 OfflineRecognizer
@@ -200,7 +200,7 @@ class LocalTranscriber:
         释放模型资源。
 
         删除 recognizer 引用并强制垃圾回收，释放模型占用的内存。
-        切换回 Azure 模式或退出程序时调用。
+        切换模型或退出程序时调用。
         """
         log.info("正在释放本地转写模型...")
         self._recognizer = None

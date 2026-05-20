@@ -177,18 +177,20 @@ class TrayIcon:
     如果 Pillow 或 pystray 未安装，所有方法静默降级为空操作。
     """
 
-    def __init__(self, on_quit=None, on_settings=None, on_log=None, on_update=None):
+    def __init__(self, on_quit=None, on_settings=None, on_history=None, on_log=None, on_update=None):
         """
         初始化托盘图标。
 
         Args:
             on_quit: 用户点击"退出"菜单项时的回调函数
             on_settings: 用户点击"设置"菜单项时的回调函数
+            on_history: 用户点击"历史记录"菜单项时的回调函数
             on_log: 用户点击"日志"菜单项时的回调函数
             on_update: 用户点击"检查更新"菜单项时的回调函数
         """
         self._on_quit = on_quit
         self._on_settings = on_settings
+        self._on_history = on_history
         self._on_log = on_log
         self._on_update = on_update
         self._icon = None
@@ -234,6 +236,10 @@ class TrayIcon:
                 pystray.MenuItem(
                     "设置",
                     self._handle_settings,
+                ),
+                pystray.MenuItem(
+                    "历史记录",
+                    self._handle_history,
                 ),
                 pystray.MenuItem(
                     "日志",
@@ -329,6 +335,14 @@ class TrayIcon:
                 self._on_log()
             except Exception as e:
                 log.error("打开日志窗口失败: %s", e)
+
+    def _handle_history(self, icon, item):
+        """处理用户点击"历史记录"菜单项。"""
+        if self._on_history:
+            try:
+                self._on_history()
+            except Exception as e:
+                log.error("打开历史记录窗口失败: %s", e)
 
     def _handle_update(self, icon, item):
         """处理用户点击"检查更新"菜单项。"""

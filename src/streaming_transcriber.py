@@ -59,7 +59,7 @@ class StreamingTranscriber:
         except ImportError:
             raise RuntimeError(
                 "sherpa-onnx 未安装。请运行: pip install sherpa-onnx\n"
-                "或在设置中切换回 Azure 云端转写。"
+                "或在设置中选择已下载的本地模型。"
             )
 
         # 创建 OnlineRecognizer

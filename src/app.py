@@ -19,26 +19,28 @@ from typing import Optional
 from src.config import (
     load_config,
     save_config,
-    get_azure_config,
     get_recording_config,
     get_hotkey_config,
+    get_history_config,
     get_polish_config,
     get_stt_config,
 )
 from src.hotkey import HotkeyListener
+from src.history import HistoryStore
 from src.interfaces import TranscriberProtocol, PolisherProtocol
 from src.logger import setup_logger
 from src.notifier import play_start_sound, play_stop_sound, create_default_sounds
 from src.output import paste_text
-from src.polisher import Polisher
 from src.countdown import CountdownOverlay
 from src.preview_overlay import PreviewOverlay
 from src.log_window import LogWindow
-from src.recorder import Recorder, check_audio_input
+from src.recorder import check_audio_input
+from src.runtime_components import create_polisher, create_recorder, create_transcriber_runtime
 from src.updater import Updater
 from src.settings_window import open_settings
-from src.transcriber import Transcriber, cleanup_audio
+from src.audio_files import cleanup_audio
 from src.tray import TrayIcon, STATE_IDLE, STATE_RECORDING, STATE_PROCESSING
+from src.voice_pipeline import VoicePipeline
 
 log = setup_logger(__name__)
 
@@ -61,13 +63,12 @@ class AIInputApp:
         log.info("Vox AI Input 语音输入法 — 正在启动...")
         log.info("=" * 50)
 
-        # 检查是否首次启动（API 未配置）
+        # 检查是否首次启动或配置尚未完成
         import builtins
         self._need_setup = getattr(builtins, "_VOX_NEED_SETUP", False)
 
         # 加载配置
         self._config = load_config()
-        azure_cfg = get_azure_config(self._config)
         rec_cfg = get_recording_config(self._config)
         hotkey_cfg = get_hotkey_config(self._config)
         polish_cfg = get_polish_config(self._config)
@@ -76,16 +77,13 @@ class AIInputApp:
         check_audio_input()
 
         # 初始化录音器
-        self._recorder = Recorder(
-            sample_rate=rec_cfg["sample_rate"],
-            channels=rec_cfg["channels"],
-            max_duration=rec_cfg["max_duration"],
-        )
+        self._recorder = create_recorder(rec_cfg)
 
         # 初始化转写器和润色器（首次启动时跳过，等用户填写 API 后通过设置窗口重建）
         self._transcriber: Optional[TranscriberProtocol] = None
         self._polisher: Optional[PolisherProtocol] = None
         self._polish_enabled = polish_cfg.get("enabled", True)
+        self._language = polish_cfg.get("language", "zh")
 
         # 流式模式标志 + 流式转写器引用
         self._is_streaming_mode = False
@@ -94,25 +92,21 @@ class AIInputApp:
         if not self._need_setup:
             try:
                 stt_cfg = get_stt_config(self._config)
-                self._transcriber = self._create_transcriber(stt_cfg, azure_cfg)
+                transcriber_runtime = create_transcriber_runtime(
+                    stt_cfg=stt_cfg,
+                    language=self._language,
+                    on_streaming_text=self._on_streaming_text,
+                )
+                self._transcriber = transcriber_runtime.transcriber
+                self._is_streaming_mode = transcriber_runtime.is_streaming_mode
+                self._streaming_transcriber = transcriber_runtime.streaming_transcriber
                 if self._polish_enabled:
-                    self._polisher = Polisher(
-                        endpoint=azure_cfg["endpoint"],
-                        api_key=azure_cfg["api_key"],
-                        api_version=azure_cfg["api_version"],
-                        deployment=azure_cfg["gpt_deployment"],
-                        system_prompt=polish_cfg.get("system_prompt", "") or None,
-                        translate_to=polish_cfg.get("translate_to", ""),
-                        show_original=polish_cfg.get("show_original", False),
-                    )
+                    self._polisher = create_polisher(self._config, polish_cfg)
             except Exception as e:
                 log.warning("初始化转写/润色模块失败（请通过设置窗口配置）: %s", e)
                 self._need_setup = True
         else:
-            log.info("首次启动，跳过 API 初始化，等待用户配置")
-
-        # 语言设置
-        self._language = polish_cfg.get("language", "zh")
+            log.info("配置尚未完成，跳过转写/润色初始化，等待用户配置")
 
         # 初始化热键监听器（含取消回调）
         self._hotkey_listener = HotkeyListener(
@@ -139,6 +133,9 @@ class AIInputApp:
         # 会话用量统计（让用户了解 API 调用次数）
         self._session_api_calls = 0
 
+        # 历史记录（便于回看、复制和后续重润色）
+        self._history_store = HistoryStore.from_config(get_history_config(self._config))
+
         # 录音倒计时浮窗
         self._countdown = CountdownOverlay()
 
@@ -155,102 +152,12 @@ class AIInputApp:
         self._tray = TrayIcon(
             on_quit=self._shutdown,
             on_settings=self._open_settings,
+            on_history=self._open_history,
             on_log=self._open_log,
             on_update=self._check_update,
         )
 
         log.info("所有模块初始化完成！")
-
-    def _create_transcriber(self, stt_cfg, azure_cfg):
-        """
-        工厂方法：根据 STT 后端配置创建对应的转写器。
-
-        - backend == "local" + streaming model + streaming=True → 创建 StreamingTranscriber
-        - backend == "local" → 创建 LocalTranscriber（本地离线推理）
-        - backend == "azure" → 创建 Transcriber（Azure 云端 API）
-
-        Args:
-            stt_cfg: STT 后端配置（来自 get_stt_config）
-            azure_cfg: Azure 配置（来自 get_azure_config）
-
-        Returns:
-            TranscriberProtocol 实例
-
-        Raises:
-            RuntimeError: 模型未下载、sherpa-onnx 未安装等情况
-        """
-        backend = stt_cfg.get("backend", "azure")
-
-        if backend == "local":
-            from src.model_manager import is_model_ready, get_model_dir, MODEL_REGISTRY
-
-            model_type = stt_cfg.get("model_type", "sense_voice")
-            num_threads = stt_cfg.get("num_threads", 4)
-
-            if not is_model_ready(model_type):
-                raise RuntimeError(
-                    f"本地模型 {model_type} 尚未下载。"
-                    "请在设置中下载模型后再使用本地转写。"
-                )
-
-            model_dir = get_model_dir(model_type)
-            language = self._language if hasattr(self, '_language') else "zh"
-
-            # 检查是否为流式模型 + 用户启用了流式转写
-            model_info = MODEL_REGISTRY.get(model_type, {})
-            is_streaming_model = model_info.get("streaming", False)
-            streaming_enabled = stt_cfg.get("streaming", False)
-
-            if is_streaming_model and streaming_enabled:
-                # 流式模式：创建 StreamingTranscriber
-                from src.streaming_transcriber import StreamingTranscriber
-
-                self._is_streaming_mode = True
-                transcriber = StreamingTranscriber(
-                    model_dir=model_dir,
-                    num_threads=num_threads,
-                    on_partial_result=self._on_streaming_text,
-                )
-                self._streaming_transcriber = transcriber
-                log.info("已创建流式转写器（模型: %s，流式模式）", model_type)
-                return transcriber
-            else:
-                # 非流式本地模式
-                self._is_streaming_mode = False
-                self._streaming_transcriber = None
-
-                if is_streaming_model:
-                    # 用 Paraformer 流式模型但走非流式路径
-                    from src.streaming_transcriber import StreamingTranscriber
-                    transcriber = StreamingTranscriber(
-                        model_dir=model_dir,
-                        num_threads=num_threads,
-                    )
-                    log.info("已创建 Paraformer 转写器（非流式模式，模型: %s）", model_type)
-                    return transcriber
-                else:
-                    from src.local_transcriber import LocalTranscriber
-                    transcriber = LocalTranscriber(
-                        model_dir=model_dir,
-                        model_type=model_type,
-                        num_threads=num_threads,
-                        language=language,
-                    )
-                    log.info("已创建本地转写器（模型: %s）", model_type)
-                    return transcriber
-
-        else:
-            # 默认 Azure 模式
-            self._is_streaming_mode = False
-            self._streaming_transcriber = None
-            transcriber = Transcriber(
-                endpoint=azure_cfg["endpoint"],
-                api_key=azure_cfg["api_key"],
-                api_version=azure_cfg["api_version"],
-                deployment=azure_cfg["whisper_deployment"],
-            )
-            log.info("已创建 Azure 云端转写器")
-            return transcriber
 
     def run(self):
         """
@@ -271,7 +178,7 @@ class AIInputApp:
 
         # 首次启动（API key 未配置）→ 自动打开设置窗口
         import builtins
-        if getattr(builtins, "_VOX_NEED_SETUP", False):
+        if getattr(builtins, "_VOX_NEED_SETUP", False) or self._need_setup:
             builtins._VOX_NEED_SETUP = False
             log.info("首次启动，自动打开设置窗口...")
             threading.Timer(1.0, self._open_settings).start()
@@ -531,71 +438,25 @@ class AIInputApp:
                 return
             self._is_processing = True
 
-        # 更新托盘状态为处理中
         self._tray.set_state(STATE_PROCESSING)
-        t_start = time.monotonic()
 
         try:
-            if not self._transcriber:
-                log.error("转写器未配置，请先在设置中配置转写引擎")
-                self._preview.dismiss()
-                return
-            # 1. 语音转文字
-            t1 = time.monotonic()
-            raw_text = self._transcriber.transcribe(
-                wav_path, language=self._language
+            pipeline = self._create_pipeline()
+            result = pipeline.process_audio(
+                wav_path,
+                on_raw_text=self._show_pipeline_raw_text,
+                on_final_text=self._show_pipeline_final_text,
             )
-
-            if not raw_text:
-                log.warning("转写结果为空，跳过")
+            if not result:
                 self._preview.dismiss()
                 return
 
-            # 本地模式不计入 API 调用次数
-            stt_cfg = get_stt_config(self._config)
-            if stt_cfg["backend"] != "local":
-                self._session_api_calls += 1
-            t2 = time.monotonic()
-            log.info("⏱️  转写耗时: %.1f 秒", t2 - t1)
-
-            # 更新浮窗 — 显示原文 + 润色中状态
-            if self._polisher and self._polish_enabled:
-                self._preview.update_text(raw_text, status="🤖 润色中...")
-            else:
-                self._preview.update_text(raw_text, status="✅ 完成")
-
-            # 2. AI 润色
-            if self._polisher and self._polish_enabled:
-                final_text = self._polisher.polish(raw_text)
-            else:
-                final_text = raw_text
-
-            if not final_text:
-                log.warning("润色结果为空，跳过")
-                self._preview.dismiss()
-                return
-
-            t3 = time.monotonic()
-            if self._polisher and self._polish_enabled:
-                self._session_api_calls += 1  # 润色计为一次 API 调用
-                log.info("⏱️  润色耗时: %.1f 秒", t3 - t2)
-
-            # 3. 更新浮窗显示最终结果
-            self._preview.update_text(final_text, status="✅ 完成")
-            time.sleep(0.5)  # 短暂展示最终结果
-
-            # 4. 粘贴到当前应用
-            log.info("🎯 最终文字: %s",
-                      final_text[:80] + "..." if len(final_text) > 80 else final_text)
-            paste_text(final_text)
-
-            total_duration = time.monotonic() - t_start
+            self._session_api_calls += result.api_calls
             log.info("⏱️  总处理耗时: %.1f 秒（本次会话已调用 API %d 次）",
-                      total_duration, self._session_api_calls)
+                      result.duration, self._session_api_calls)
 
-            # 记录最近结果（供设置窗口显示）
-            self._last_result_text = final_text
-            self._last_result_duration = total_duration
+            self._last_result_text = result.final_text
+            self._last_result_duration = result.duration
 
             # 让用户看到结果后关闭浮窗
             time.sleep(1.0)
@@ -644,50 +505,25 @@ class AIInputApp:
                 return
             self._is_processing = True
 
-        # 更新托盘状态为处理中
         self._tray.set_state(STATE_PROCESSING)
-        t_start = time.monotonic()
 
         try:
-            log.info("流式转写原文: %s",
-                     raw_text[:80] + "..." if len(raw_text) > 80 else raw_text)
+            pipeline = self._create_pipeline()
+            result = pipeline.process_text(
+                raw_text,
+                on_raw_text=self._show_pipeline_raw_text,
+                on_final_text=self._show_pipeline_final_text,
+            )
+            if not result:
+                self._preview.dismiss()
+                return
 
-            # 更新浮窗 — 显示原文 + 润色中状态
-            if self._polisher and self._polish_enabled:
-                self._preview.update_text(raw_text, status="🤖 润色中...")
-            else:
-                self._preview.update_text(raw_text, status="✅ 完成")
-
-            # AI 润色
-            if self._polisher and self._polish_enabled:
-                t1 = time.monotonic()
-                final_text = self._polisher.polish(raw_text)
-                t2 = time.monotonic()
-                self._session_api_calls += 1
-                log.info("⏱️  润色耗时: %.1f 秒", t2 - t1)
-            else:
-                final_text = raw_text
-
-            if not final_text:
-                log.warning("润色结果为空，降级使用原始文字")
-                final_text = raw_text
-
-            # 更新浮窗显示最终结果
-            self._preview.update_text(final_text, status="✅ 完成")
-            time.sleep(0.5)  # 短暂展示最终结果
-
-            # 粘贴到当前应用
-            log.info("🎯 最终文字: %s",
-                      final_text[:80] + "..." if len(final_text) > 80 else final_text)
-            paste_text(final_text)
-
-            total_duration = time.monotonic() - t_start
+            self._session_api_calls += result.api_calls
             log.info("⏱️  总处理耗时: %.1f 秒（本次会话已调用 API %d 次）",
-                      total_duration, self._session_api_calls)
+                      result.duration, self._session_api_calls)
 
-            # 记录最近结果
-            self._last_result_text = final_text
-            self._last_result_duration = total_duration
+            self._last_result_text = result.final_text
+            self._last_result_duration = result.duration
 
             # 让用户看到结果后关闭浮窗
             time.sleep(1.0)
@@ -711,11 +547,54 @@ class AIInputApp:
                 self._is_processing = False
             self._tray.set_state(STATE_IDLE)
 
+    def _create_pipeline(self):
+        """创建当前配置下的核心语音处理流水线。"""
+        stt_cfg = get_stt_config(self._config)
+        polish_cfg = get_polish_config(self._config)
+        history_cfg = get_history_config(self._config)
+        return VoicePipeline(
+            transcriber=self._transcriber,
+            polisher=self._polisher,
+            polish_enabled=self._polish_enabled,
+            language=self._language,
+            stt_counts_as_api=False,
+            paste_func=paste_text,
+            history_store=self._history_store if history_cfg["enabled"] else None,
+            history_metadata={
+                "stt_backend": stt_cfg["backend"],
+                "polish_enabled": self._polish_enabled,
+                "polish_profile": polish_cfg.get("profile", ""),
+                "language": self._language,
+            },
+        )
+
+    def _show_pipeline_raw_text(self, raw_text):
+        """核心流水线产出原文后，更新预览浮窗。"""
+        if self._polisher and self._polish_enabled:
+            self._preview.update_text(raw_text, status="🤖 润色中...")
+        else:
+            self._preview.update_text(raw_text, status="✅ 完成")
+
+    def _show_pipeline_final_text(self, final_text):
+        """核心流水线产出最终文字后，更新预览浮窗。"""
+        self._preview.update_text(final_text, status="✅ 完成")
+        time.sleep(0.5)  # 短暂展示最终结果
+
     # ==================== 日志窗口 ====================
 
     def _open_log(self):
         """打开实时日志窗口（从托盘菜单触发）。"""
         self._log_window.show()
+
+    # ==================== 历史窗口 ====================
+
+    def _open_history(self):
+        """在主设置窗口中打开历史记录页。"""
+        self._open_settings(initial_page="data", initial_tab="records")
+
+    def _clear_history(self):
+        """清空历史记录。"""
+        return self._history_store.clear()
 
     # ==================== 版本更新 ====================
 
@@ -832,29 +711,22 @@ class AIInputApp:
 
     # ==================== 设置窗口 ====================
 
-    def _open_settings(self):
+    def _open_settings(self, initial_page="transcribe", initial_tab=None):
         """
         打开设置窗口（从托盘菜单触发）。
 
         在新线程中创建 tkinter 窗口，不阻塞当前线程。
         """
-        # 构建状态信息
-        state_map = {
-            STATE_IDLE: "idle",
-            STATE_RECORDING: "recording",
-            STATE_PROCESSING: "processing",
-        }
-        status_info = {
-            "state": state_map.get(self._tray._current_state, "idle"),
-            "last_text": self._last_result_text,
-            "last_duration": self._last_result_duration,
-            "session_api_calls": self._session_api_calls,
-        }
-
         open_settings(
             current_config=self._config,
-            status_info=status_info,
             on_save=self._reload_config,
+            on_clear_history=self._clear_history,
+            on_get_history_entries=lambda: [
+                entry.to_dict()
+                for entry in self._history_store.list_recent()
+            ],
+            initial_page=initial_page,
+            initial_tab=initial_tab,
         )
 
     def _reload_config(self, new_config):
@@ -873,15 +745,15 @@ class AIInputApp:
             # 1. 保存到文件
             save_config(new_config)
 
-            # 2. 清除 Azure 客户端缓存（下次调用时自动重建）
+            # 2. 清除 Azure LLM 客户端缓存（下次调用时自动重建）
             src.azure_client._client_cache.clear()
-            log.info("已清除 API 客户端缓存")
+            log.info("已清除 Azure LLM 客户端缓存")
 
             # 3. 提取各部分配置
-            azure_cfg = get_azure_config(new_config)
             rec_cfg = get_recording_config(new_config)
             polish_cfg = get_polish_config(new_config)
             stt_cfg = get_stt_config(new_config)
+            history_cfg = get_history_config(new_config)
 
             # 4. 卸载旧的本地模型（如果有 unload 方法）
             if hasattr(self._transcriber, 'unload'):
@@ -899,33 +771,35 @@ class AIInputApp:
                 except Exception as e:
                     log.warning("卸载旧流式转写模型失败: %s", e)
 
-            # 5. 更新语言设置（必须在 _create_transcriber 之前，因为工厂方法会读取 self._language）
+            # 5. 更新语言设置（必须在重建转写器之前）
             self._language = polish_cfg.get("language", "zh")
 
-            # 6. 用工厂方法重建转写器（内部会设置 _is_streaming_mode 和 _streaming_transcriber）
-            self._transcriber = self._create_transcriber(stt_cfg, azure_cfg)
+            # 6. 用共享工厂重建本地转写器（同时返回流式模式信息）
+            transcriber_runtime = create_transcriber_runtime(
+                stt_cfg=stt_cfg,
+                language=self._language,
+                on_streaming_text=self._on_streaming_text,
+            )
+            self._transcriber = transcriber_runtime.transcriber
+            self._is_streaming_mode = transcriber_runtime.is_streaming_mode
+            self._streaming_transcriber = transcriber_runtime.streaming_transcriber
 
             # 7. 重建/移除润色器
             self._polish_enabled = polish_cfg.get("enabled", True)
             if self._polish_enabled:
-                self._polisher = Polisher(
-                    endpoint=azure_cfg["endpoint"],
-                    api_key=azure_cfg["api_key"],
-                    api_version=azure_cfg["api_version"],
-                    deployment=azure_cfg["gpt_deployment"],
-                    system_prompt=polish_cfg.get("system_prompt", "") or None,
-                    translate_to=polish_cfg.get("translate_to", ""),
-                    show_original=polish_cfg.get("show_original", False),
-                )
+                self._polisher = create_polisher(new_config, polish_cfg)
             else:
                 self._polisher = None
 
-            # 8. 更新录音参数（下次录音时生效，语言已在步骤 5 更新）
+            # 8. 更新录音参数
             self._recorder.sample_rate = rec_cfg["sample_rate"]
             self._recorder.channels = rec_cfg["channels"]
             self._recorder.max_duration = rec_cfg["max_duration"]
 
-            # 9. 热键变更时重建监听器
+            # 9. 更新历史记录配置
+            self._history_store = HistoryStore.from_config(history_cfg)
+
+            # 10. 热键变更时重建监听器
             hotkey_cfg = get_hotkey_config(new_config)
             old_hotkey = get_hotkey_config(self._config).get("combination", "")
             new_hotkey = hotkey_cfg.get("combination", "")
@@ -949,7 +823,7 @@ class AIInputApp:
                 except Exception as e:
                     log.error("重启热键监听器失败: %s", e)
 
-            # 10. 更新内部配置引用
+            # 11. 更新内部配置引用
             self._config = new_config
 
             log.info("配置已热重载完成")

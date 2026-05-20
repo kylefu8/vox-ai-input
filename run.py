@@ -11,7 +11,28 @@ from src.logger import setup_logger
 
 log = setup_logger("main")
 
-__version__ = "0.0.6"
+__version__ = "0.0.7"
+
+
+def _configure_windows_dpi():
+    """
+    Enable crisp Tkinter rendering on scaled Windows displays.
+
+    Without DPI awareness, Windows can bitmap-scale the whole Tk window at
+    125%/150% display scaling, which makes text look soft.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        try:
+            # PROCESS_PER_MONITOR_DPI_AWARE = 2
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception as e:
+        log.debug("DPI awareness setup skipped: %s", e)
 
 
 def _create_components():
@@ -24,41 +45,17 @@ def _create_components():
     Returns:
         tuple: (recorder, transcriber, polisher_or_none, polish_config)
     """
-    from src.config import (
-        load_config, get_azure_config, get_recording_config, get_polish_config
-    )
-    from src.polisher import Polisher
-    from src.recorder import Recorder
-    from src.transcriber import Transcriber
+    from src.config import load_config
+    from src.runtime_components import create_runtime_components
 
     config = load_config()
-    azure_cfg = get_azure_config(config)
-    rec_cfg = get_recording_config(config)
-    polish_cfg = get_polish_config(config)
-
-    recorder = Recorder(
-        sample_rate=rec_cfg["sample_rate"],
-        channels=rec_cfg["channels"],
-        max_duration=rec_cfg["max_duration"],
+    components = create_runtime_components(config)
+    return (
+        components.recorder,
+        components.transcriber,
+        components.polisher,
+        components.polish_cfg,
     )
-
-    transcriber = Transcriber(
-        endpoint=azure_cfg["endpoint"],
-        api_key=azure_cfg["api_key"],
-        api_version=azure_cfg["api_version"],
-        deployment=azure_cfg["whisper_deployment"],
-    )
-
-    polisher = None
-    if polish_cfg.get("enabled", True):
-        polisher = Polisher(
-            endpoint=azure_cfg["endpoint"],
-            api_key=azure_cfg["api_key"],
-            api_version=azure_cfg["api_version"],
-            deployment=azure_cfg["gpt_deployment"],
-        )
-
-    return recorder, transcriber, polisher, polish_cfg
 
 
 def run_test_mode():
@@ -68,7 +65,7 @@ def run_test_mode():
     完整流水线：按回车录音 → 按回车停止 → 转写 → 润色 → 粘贴。
     """
     from src.output import paste_text
-    from src.transcriber import cleanup_audio
+    from src.audio_files import cleanup_audio
 
     log.info("=" * 50)
     log.info("Vox AI Input 语音输入法 — 测试模式")
@@ -242,12 +239,13 @@ def main():
         python run.py             # 正常模式（隐藏控制台，托盘运行）
         python run.py --test      # 测试模式（按回车控制录音）
         python run.py --visible   # 正常模式但保留控制台窗口（调试用）
-        python run.py --setup     # 打开配置向导 Web UI
         python run.py --version   # 显示版本号
     """
     if "--version" in sys.argv:
         print(f"Vox AI Input v{__version__}")
         sys.exit(0)
+
+    _configure_windows_dpi()
 
     # 单实例检测：防止重复运行
     if not _acquire_single_instance_lock():
@@ -265,11 +263,6 @@ def main():
             pass
         sys.exit(0)
 
-    if "--setup" in sys.argv:
-        from src.setup_ui import run_setup
-        run_setup()
-        sys.exit(0)
-
     # 首次启动检测：若 config.yaml 不存在，从模板复制一份
     from src.paths import get_project_root
     config_path = get_project_root() / "config.yaml"
@@ -283,19 +276,19 @@ def main():
         if example_path.exists():
             import shutil
             shutil.copy2(str(example_path), str(config_path))
-            log.info("已从模板创建 config.yaml，请通过设置窗口填入 Azure API 信息")
+            log.info("已从模板创建 config.yaml，请通过设置窗口完成本地模型和润色设置")
         else:
             log.error("未找到 config.yaml 和 config.example.yaml")
-            log.error("请从 GitHub Release 下载 config.example.yaml，复制为 config.yaml 并填入 Azure API 信息")
+            log.error("请从 GitHub Release 下载 config.example.yaml，复制为 config.yaml")
             sys.exit(1)
 
-    # 检查 config.yaml 中的 API key 是否还是 placeholder
+    # 检查 config.yaml 中的润色 API 信息是否还是 placeholder
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             content = f.read()
         if "your-api-key-here" in content or "your-resource" in content:
-            log.warning("config.yaml 中的 API 信息尚未填写")
-            log.warning("程序将启动并打开设置窗口，请填入你的 Azure API 信息")
+            log.warning("config.yaml 中的润色 API 信息尚未填写")
+            log.warning("程序将启动并打开设置窗口，请按需配置 AI 润色")
             # 标记需要自动打开设置窗口
             import builtins
             builtins._VOX_NEED_SETUP = True

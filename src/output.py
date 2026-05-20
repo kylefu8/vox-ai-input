@@ -196,7 +196,7 @@ def _simulate_paste():
         if system == "Windows":
             log.error(
                 "如果目标窗口以管理员权限运行，请以管理员身份启动 Vox AI Input\n"
-                "  或将配置中 output.paste_method 改为 'clipboard'，然后手动 Ctrl+V 粘贴"
+                "  或复制历史记录中的文本后手动粘贴"
             )
         else:
             log.error("请确保已在系统设置中授权辅助功能权限")

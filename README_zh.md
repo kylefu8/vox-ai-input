@@ -8,7 +8,7 @@
 
 支持中英文混合识别、口述符号自动转换（如"艾特" → @），AI 自动修正标点和语法，可选实时翻译到 9 种语言。
 
-> **v0.0.6 流式实时转写 + 润色模型升级！** 新增 Paraformer 流式模型，边说边出字。润色模型从 gpt-4o-mini 升级到 gpt-5.4-nano——更快更便宜，不再回答问题或拒绝请求。
+> **v0.0.7 本地优先重构 + 设置页瘦身！** 在线转写已移除，本地转写成为核心路径；润色支持 Azure OpenAI、OpenAI-compatible 和 Anthropic，并统一为 endpoint/key/model 的简化配置。
 
 ## 功能特性
 
@@ -16,15 +16,18 @@
 - **🆕 本地离线转写** — 集成 sherpa-onnx，无需联网，延迟极低
   - SenseVoice（推荐·中文最佳，~156MB）
   - Whisper Small（多语言通用，~610MB）
-  - 设置窗口一键下载模型，Azure / 本地随时切换
+  - Paraformer 流式（中英实时转写，边说边出字）
+  - 设置窗口一键下载模型
 - **AI 智能润色** — 自动修正标点、语法、去口语填充词
+- **多 API 润色端点** — 支持 Azure OpenAI、OpenAI-compatible、Anthropic，设置中自动识别 API 类型
+- **历史记录** — 自动保存最近输出，可在设置窗口回看并复制
 - **中英混合识别** — 中英文夹杂也能准确识别，技术术语保留英文
 - **符号口述转换** — 说"艾特"输出 @、说"井号"输出 #
 - **实时翻译** — 说中文出英文（支持 9 种语言），一步到位
-- **自定义 Prompt** — 高级设置中可自由编辑润色提示词
+- **高级 Prompt 覆盖** — 默认收起，避免误改导致润色跑偏
 - **录音倒计时** — 录音接近上限时屏幕右下角半透明倒数提示
 - **实时日志窗口** — 深色主题滚动日志，方便排查问题
-- **现代设置界面** — 深色/浅色主题一键切换，卡片式布局，所有配置可视化编辑
+- **现代设置界面** — 左侧导航、更聚焦的页面结构，支持深色/浅色主题
 - **程序图标** — Fluent 风格蓝紫渐变麦克风，应用到 exe、安装包、设置窗口
 - **快捷键热更新** — 修改快捷键立即生效，无需重启
 - **系统托盘常驻** — 渐变麦克风图标，状态一目了然
@@ -36,9 +39,8 @@
 
 - **Windows** 10/11 (x86_64)
 - **麦克风** 系统已授权访问
-- **转写引擎**（二选一）：
-  - 🖥️ **本地离线** — 无需额外配置，设置中下载模型即可使用
-  - ☁️ **Azure 云端** — 需要 [Azure AI Foundry](https://ai.azure.com/) 已部署 `gpt-4o-mini-transcribe` + `gpt-4o-mini`
+- **转写引擎**：设置中下载的本地离线模型
+- **可选润色 API**：Azure OpenAI / OpenAI-compatible / Anthropic
 
 ## 快速开始
 
@@ -46,7 +48,7 @@
 
 1. 从 [Releases](https://github.com/kylefu8/vox-ai-input/releases) 下载 `VoxAIInput-Setup-x.x.x.exe`
 2. 双击运行安装（支持桌面快捷方式 + 开机自启选项）
-3. 首次启动会自动打开设置窗口 — 选择本地转写或填入 Azure API 信息
+3. 首次启动会自动打开设置窗口 — 下载本地模型，并按需配置 AI 润色
 4. 长按快捷键说话即可
 
 ### 方式二：免安装版
@@ -125,22 +127,38 @@ python run.py
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `stt.backend` | 转写引擎：`azure`（云端）或 `local`（本地离线） | `azure` |
-| `stt.model_type` | 本地模型：`sense_voice` 或 `whisper_small` | `sense_voice` |
-| `stt.num_threads` | 本地推理线程数 | `4` |
-| `azure.endpoint` | Azure OpenAI 端点 URL | *云端必填* |
-| `azure.api_key` | Azure OpenAI API Key | *云端必填* |
-| `azure.api_version` | API 版本 | `2025-01-01-preview` |
-| `azure.whisper_deployment` | 语音转写模型部署名 | `whisper` |
-| `azure.gpt_deployment` | GPT 润色模型部署名 | `gpt-4o-mini` |
+| `stt.backend` | 转写引擎，固定为本地离线 | `local` |
+| `stt.model_type` | 本地模型：`sense_voice`、`whisper_small` 或 `paraformer_streaming` | `sense_voice` |
 | `recording.sample_rate` | 采样率 (Hz) | `16000` |
 | `recording.channels` | 声道数 | `1` |
 | `recording.max_duration` | 最长录音秒数 | `60` |
 | `hotkey.combination` | 录音快捷键 | `alt+z` |
-| `polish.enabled` | 是否启用 AI 润色 | `true` |
-| `polish.language` | 语音识别语言（留空自动检测） | `""` |
+| `polish.enabled` | 是否启用 AI 润色 | `false` |
+| `polish.profile` | 润色使用的 LLM profile | `default` |
 | `polish.translate_to` | 翻译目标语言代码（留空不翻译） | `""` |
-| `polish.system_prompt` | 自定义润色提示词（留空用默认） | `""` |
+| `polish.show_original` | 翻译时同时输出润色后的原文 | `false` |
+| `llm_profiles.default.endpoint` | 润色 API endpoint | `""` |
+| `llm_profiles.default.api_key` | 润色 API Key | `""` |
+| `llm_profiles.default.model` | 模型名；Azure 时填写部署名 | `""` |
+| `history.enabled` | 是否保存最近输出历史 | `true` |
+| `history.max_entries` | 历史记录最多保留条数 | `100` |
+
+### 润色 API 设置
+
+设置窗口的“润色”页只需要填写 Endpoint、API Key、模型名称。点击“验证并识别”后会自动尝试 OpenAI-compatible、Azure OpenAI 和 Anthropic；点击“获取模型”会尽量从 endpoint 拉取可用模型列表。也可以手动编辑：
+
+```yaml
+polish:
+  enabled: true
+  profile: "default"
+
+llm_profiles:
+  default:
+    provider: "auto"
+    endpoint: "https://api.deepseek.com/v1"
+    api_key: "sk-..."
+    model: "deepseek-chat"
+```
 
 ## 项目结构
 
@@ -153,12 +171,15 @@ vox-ai-input/
 ├── requirements.txt        # 运行依赖
 ├── src/
 │   ├── app.py              # 主控制器，协调所有模块
+│   ├── voice_pipeline.py   # 核心流程：转写 → 润色 → 输出
+│   ├── runtime_components.py # 运行时组件工厂
 │   ├── config.py           # 配置加载、保存与验证
 │   ├── recorder.py         # 麦克风录音 + 设备检测
-│   ├── transcriber.py      # Azure 语音转文字
+│   ├── audio_files.py      # 临时音频文件工具
 │   ├── local_transcriber.py # 本地离线语音转文字（sherpa-onnx）
 │   ├── model_manager.py    # 本地模型下载与管理
 │   ├── polisher.py         # AI 文字润色 + 翻译
+│   ├── llm_clients.py      # 润色 LLM provider 适配器（Azure/OpenAI-compatible/Anthropic）
 │   ├── hotkey.py           # 全局热键监听
 │   ├── output.py           # 剪贴板 + 模拟粘贴
 │   ├── tray.py             # 系统托盘（渐变麦克风图标）
@@ -206,7 +227,7 @@ pyinstaller build.spec --clean --noconfirm
 
 **翻译没生效**
 - 确认设置中翻译下拉选择了目标语言并保存
-- 展开高级设置检查 prompt 末尾是否有翻译指令
+- 在“润色”设置里检查提示词是否被手动改坏；必要时清空提示词恢复默认
 
 **RDP 远程桌面无法录音**
 - RDP 默认不转发麦克风，需在 RDP 客户端 → 本地资源 → 远程音频 → 设置 → 开启「从此计算机录制」
@@ -217,8 +238,8 @@ pyinstaller build.spec --clean --noconfirm
 ## 技术栈
 
 - **语言**: Python 3.10+
-- **语音转写**: 本地 sherpa-onnx（SenseVoice / Whisper Small）或 Azure AI Foundry (gpt-4o-mini-transcribe)
-- **文字润色 + 翻译**: Azure AI Foundry (gpt-4o-mini)
+- **语音转写**: 本地 sherpa-onnx（SenseVoice / Whisper Small / Paraformer）
+- **文字润色 + 翻译**: Azure OpenAI / OpenAI-compatible / Anthropic
 - **热键监听**: pynput
 - **录音**: sounddevice + soundfile
 - **UI**: tkinter（深色主题设置窗口 + 日志窗口）+ pystray（系统托盘）

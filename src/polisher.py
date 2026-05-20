@@ -1,14 +1,14 @@
 """
 文字润色模块
 
-调用 Azure OpenAI 的 GPT 模型，对语音转写的文字进行最小化润色：
+调用可配置 LLM provider，对语音转写的文字进行最小化润色：
 补标点、纠错别字、去口语填充词，但不改变原意。
 实现了 PolisherProtocol 接口，可被其他润色实现替换。
 """
 
 from openai import APITimeoutError, APIConnectionError
 
-from src.azure_client import get_azure_client
+from src.llm_clients import LLMOptions
 from src.logger import setup_logger
 
 log = setup_logger(__name__)
@@ -90,39 +90,46 @@ def build_prompt(base_prompt="", translate_to="", show_original=False):
 
 class Polisher:
     """
-    Azure GPT 文字润色处理器。
+    LLM 文字润色处理器。
 
     实现 PolisherProtocol 接口。
-    使用 Azure OpenAI 的 GPT 模型对语音转写文字进行润色。
+    使用注入的 LLM client 对语音转写文字进行润色。
     """
 
-    def __init__(self, endpoint, api_key, api_version, deployment, system_prompt=None, translate_to="", show_original=False):
+    def __init__(
+        self,
+        llm_client,
+        system_prompt=None,
+        translate_to="",
+        show_original=False,
+        max_tokens=None,
+        temperature=0,
+    ):
         """
         初始化润色器。
 
         Args:
-            endpoint: Azure OpenAI 服务端点 URL
-            api_key: Azure OpenAI API Key
-            api_version: API 版本号
-            deployment: GPT 模型的部署名称
+            llm_client: 实现 complete_text() 的 LLM client
             system_prompt: 自定义基础提示词，留空用默认
             translate_to: 翻译目标语言代码，空=不翻译
             show_original: 翻译时是否同时输出原文
+            max_tokens: 固定最大输出 token；None 时按输入长度动态估算
+            temperature: LLM 采样温度
         """
-        self.deployment = deployment
+        self.llm_client = llm_client
+        self.deployment = getattr(llm_client, "model_name", "")
         self.system_prompt = build_prompt(system_prompt or "", translate_to, show_original)
+        self.max_tokens = max_tokens
+        self.temperature = temperature
 
-        # 获取共享的 Azure OpenAI 客户端
-        # 与 Transcriber 使用相同参数，确保复用同一个客户端和 TCP 连接池
-        self.client = get_azure_client(
-            endpoint=endpoint,
-            api_key=api_key,
-            api_version=api_version,
-            timeout=60.0,
-            max_retries=0,
+        # 保留底层 client 引用，便于测试和诊断。
+        self.client = getattr(llm_client, "client", None)
+
+        log.info(
+            "LLM 润色器初始化完成（provider: %s，模型: %s）",
+            getattr(llm_client, "provider", "unknown"),
+            self.deployment,
         )
-
-        log.info("GPT 润色器初始化完成（部署: %s）", deployment)
 
     def polish(self, raw_text):
         """
@@ -144,19 +151,17 @@ class Polisher:
             # 动态估算 max_tokens：润色输出不会超过输入太多
             # 中文约 1 字 = 1~2 token，留余量但不过度预留
             # 长文本（60 秒录音可能 200+ 字）需要更高上限，否则输出会被截断
-            estimated_tokens = min(4096, len(raw_text) * 3 + 100)
-
-            response = self.client.chat.completions.create(
-                model=self.deployment,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": f"<speech_transcript>{raw_text}</speech_transcript>"},
-                ],
-                temperature=0,  # 润色任务不需要创造性，0 最快最确定
-                max_completion_tokens=estimated_tokens,
+            estimated_tokens = self.max_tokens or min(4096, len(raw_text) * 3 + 100)
+            polished = self.llm_client.complete_text(
+                self.system_prompt,
+                f"<speech_transcript>{raw_text}</speech_transcript>",
+                LLMOptions(
+                    max_tokens=estimated_tokens,
+                    temperature=self.temperature,
+                ),
             )
 
-            polished = response.choices[0].message.content.strip()
+            polished = polished.strip()
 
             if not polished:
                 log.warning("GPT 返回了空内容，使用原始文字")
@@ -211,27 +216,20 @@ class Polisher:
         try:
             estimated_tokens = min(4096, len(text) * 4 + 200)
 
-            response = self.client.chat.completions.create(
-                model=self.deployment,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            f"你是一个翻译助手。将用户输入的文字翻译为{lang_name}。\n"
-                            "要求：\n"
-                            "1. 只输出翻译结果，不要解释\n"
-                            "2. 保持原文的语气和风格\n"
-                            "3. 专有名词、品牌名可保留原文\n"
-                            "4. 如果原文已经是目标语言，原样返回"
-                        ),
-                    },
-                    {"role": "user", "content": text},
-                ],
-                temperature=0,
-                max_completion_tokens=estimated_tokens,
+            translated = self.llm_client.complete_text(
+                (
+                    f"你是一个翻译助手。将用户输入的文字翻译为{lang_name}。\n"
+                    "要求：\n"
+                    "1. 只输出翻译结果，不要解释\n"
+                    "2. 保持原文的语气和风格\n"
+                    "3. 专有名词、品牌名可保留原文\n"
+                    "4. 如果原文已经是目标语言，原样返回"
+                ),
+                text,
+                LLMOptions(max_tokens=estimated_tokens, temperature=0),
             )
 
-            translated = response.choices[0].message.content.strip()
+            translated = translated.strip()
             if not translated:
                 log.warning("翻译返回空内容，使用原文")
                 return text
