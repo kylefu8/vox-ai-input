@@ -179,3 +179,4 @@
 - 发布前验证通过：`py -3.12 -m compileall -q run.py src tests`；全量测试 `176 passed in 24.19s`。
 - 新增 Codex 多电脑同步配置：根目录 `AGENTS.md` 固化项目长期上下文，`docs/codex-sync.md` 说明新电脑初始化和分支同步流程，`.codex/config.toml.example` 提供可复制到 `~/.codex/config.toml` 的个人配置模板，`scripts/bootstrap_dev.ps1` 一键创建 venv、安装依赖并生成本机 `config.yaml`。
 - 使用 `codex debug prompt-input "ping"` 验证 `AGENTS.md` 已进入 Codex 模型可见上下文。
+- 新增 `docs/bootstrap-dev.md`，详细说明 `scripts/bootstrap_dev.ps1` 的作用、参数、适用场景和让 Codex 先执行 bootstrap 的推荐方式；`AGENTS.md` 新增 `Fresh Clone Bootstrap` 规则，指导纯净 Codex 在 `.venv` / `config.yaml` 缺失时先初始化项目。

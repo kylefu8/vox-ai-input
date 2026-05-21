@@ -233,7 +233,7 @@ pyinstaller build.spec --clean --noconfirm
 
 ### Codex 多电脑开发
 
-仓库根目录的 `AGENTS.md` 会作为新 Codex session 的项目级长期上下文。纯净电脑初始化、两台电脑同步和并行分支工作流见 `docs/codex-sync.md`。
+仓库根目录的 `AGENTS.md` 会作为新 Codex session 的项目级长期上下文。纯净电脑初始化、两台电脑同步和并行分支工作流见 `docs/codex-sync.md`；bootstrap 脚本本身的说明见 `docs/bootstrap-dev.md`。
 
 ## 常见问题
 

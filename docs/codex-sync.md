@@ -24,6 +24,8 @@ cd vox-ai-input
 .\scripts\bootstrap_dev.ps1
 ```
 
+这个脚本的详细说明见 `docs/bootstrap-dev.md`。
+
 4. 打开 `config.yaml`，配置本机专属内容：
 
 - 本地 STT 模型选择
@@ -49,6 +51,30 @@ codex debug prompt-input "ping" | Select-String -Pattern "AGENTS.md|Vox AI Input
 ```
 
 `.codex/config.toml.example` 是可选的个人配置模板。Codex CLI 当前主要读取 `~/.codex/config.toml`，所以不要把 API key 或个人路径写进仓库配置。
+
+## 能不能让 Codex 自动先执行 bootstrap？
+
+可以让 Codex “知道应该先执行”，但不建议、也不应该让仓库在 `git clone` 完成瞬间自动执行脚本。自动执行刚 clone 下来的代码有安全风险；更好的方式是把启动规则写进 `AGENTS.md`，让 Codex 在进入项目后先判断 `.venv` 和 `config.yaml` 是否存在，再运行 bootstrap。
+
+本仓库已经在 `AGENTS.md` 的 `Fresh Clone Bootstrap` 中写入规则：
+
+- `.venv` 不存在时，先运行 `.\scripts\bootstrap_dev.ps1 -SkipVerify`。
+- 用户要求完整初始化或发布前验证时，运行 `.\scripts\bootstrap_dev.ps1`。
+- `config.yaml` 不存在时，从 `config.example.yaml` 复制，但不提交。
+
+新电脑 clone 后，你可以直接让 Codex 接管初始化：
+
+```powershell
+codex "这是一个刚 clone 的 vox-ai-input 仓库。请先按 AGENTS.md 的 Fresh Clone Bootstrap 初始化项目，然后总结结果。"
+```
+
+如果你希望用非交互命令让 Codex 执行初始化：
+
+```powershell
+codex exec "这是一个刚 clone 的 vox-ai-input 仓库。请先按 AGENTS.md 的 Fresh Clone Bootstrap 初始化项目，然后总结结果。"
+```
+
+如果 Codex 因为权限策略请求批准安装依赖或运行脚本，批准即可。不要为了省一次确认而把仓库脚本设置成 clone 后无条件自动执行。
 
 ## 两台电脑交替开发
 

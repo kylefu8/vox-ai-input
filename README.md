@@ -233,7 +233,7 @@ pyinstaller build.spec --clean --noconfirm
 
 ### Codex Multi-Machine Development
 
-This repo includes `AGENTS.md` as persistent project context for fresh Codex sessions. For a clean machine or two-computer workflow, see `docs/codex-sync.md`.
+This repo includes `AGENTS.md` as persistent project context for fresh Codex sessions. For a clean machine or two-computer workflow, see `docs/codex-sync.md`; for the bootstrap script itself, see `docs/bootstrap-dev.md`.
 
 ## FAQ
 

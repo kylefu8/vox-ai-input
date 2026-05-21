@@ -40,6 +40,16 @@ The product is local-STT-first. Do not reintroduce online transcription unless t
 
 Use Python 3.12 on Windows.
 
+### Fresh Clone Bootstrap
+
+When starting work in a fresh clone or on a new machine, first check whether `.venv` and `config.yaml` exist.
+
+- If `.venv` is missing, run `.\scripts\bootstrap_dev.ps1 -SkipVerify` before code exploration that depends on installed packages.
+- If the user asks for a full setup or release verification, run `.\scripts\bootstrap_dev.ps1` so compile and tests run as part of setup.
+- If `config.yaml` is missing but `.venv` already exists, copy `config.example.yaml` to `config.yaml` and remind the user to fill machine-local endpoint/API key/model settings.
+- Do not edit or commit `config.yaml`.
+- If Codex approval settings require confirmation before running scripts or installing dependencies, ask for approval and explain that this is the project bootstrap step.
+
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -53,6 +63,8 @@ Shortcut:
 ```powershell
 .\scripts\bootstrap_dev.ps1
 ```
+
+Detailed bootstrap documentation: `docs/bootstrap-dev.md`.
 
 ## Verification
 
