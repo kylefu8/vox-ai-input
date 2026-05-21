@@ -52,6 +52,8 @@ codex debug prompt-input "ping" | Select-String -Pattern "AGENTS.md|Vox AI Input
 
 `.codex/config.toml.example` 是可选的个人配置模板。Codex CLI 当前主要读取 `~/.codex/config.toml`，所以不要把 API key 或个人路径写进仓库配置。
 
+可直接复制的首次 clone、已有仓库同步、接着做具体任务的 Codex 提示词见 `docs/codex-entry-prompts.md`。
+
 ## 能不能让 Codex 自动先执行 bootstrap？
 
 可以让 Codex “知道应该先执行”，但不建议、也不应该让仓库在 `git clone` 完成瞬间自动执行脚本。自动执行刚 clone 下来的代码有安全风险；更好的方式是把启动规则写进 `AGENTS.md`，让 Codex 在进入项目后先判断 `.venv` 和 `config.yaml` 是否存在，再运行 bootstrap。
@@ -61,6 +63,13 @@ codex debug prompt-input "ping" | Select-String -Pattern "AGENTS.md|Vox AI Input
 - `.venv` 不存在时，先运行 `.\scripts\bootstrap_dev.ps1 -SkipVerify`。
 - 用户要求完整初始化或发布前验证时，运行 `.\scripts\bootstrap_dev.ps1`。
 - `config.yaml` 不存在时，从 `config.example.yaml` 复制，但不提交。
+
+同时也写入了 `GitHub Sync Before Work` 规则：
+
+- 每次开工先看 `git status --short --branch`。
+- 工作区干净时 `git fetch --all --tags --prune`，然后 `git pull --rebase`。
+- 工作区有未提交改动时，不盲目 rebase，先总结改动并询问。
+- 同步后阅读 `AGENTS.md`、`progress.md`、`findings.md`、`task_plan.md` 和最新 release note。
 
 新电脑 clone 后，你可以直接让 Codex 接管初始化：
 

@@ -40,6 +40,23 @@ The product is local-STT-first. Do not reintroduce online transcription unless t
 
 Use Python 3.12 on Windows.
 
+### GitHub Sync Before Work
+
+At the start of a new Codex task in an existing checkout:
+
+1. Run `git status --short --branch` first.
+2. If the working tree is clean and the current branch tracks a remote branch, run:
+
+```powershell
+git fetch --all --tags --prune
+git pull --rebase
+```
+
+3. If there are uncommitted local changes, do not pull/rebase blindly. Summarize the changed files and ask whether to commit, stash, or keep working on the local changes.
+4. After syncing, read `AGENTS.md`, `progress.md`, `findings.md`, `task_plan.md`, and the latest `_release_note_v*.md` before making product or architecture changes.
+5. If pulled commits changed dependency files such as `requirements.txt` or `requirements-dev.txt`, rerun `.\scripts\bootstrap_dev.ps1 -SkipVerify`.
+6. If pulled commits changed setup or test rules, follow the newest instructions in `AGENTS.md`.
+
 ### Fresh Clone Bootstrap
 
 When starting work in a fresh clone or on a new machine, first check whether `.venv` and `config.yaml` exist.
@@ -65,6 +82,7 @@ Shortcut:
 ```
 
 Detailed bootstrap documentation: `docs/bootstrap-dev.md`.
+Codex entry prompts for fresh clone and existing checkout workflows: `docs/codex-entry-prompts.md`.
 
 ## Verification
 

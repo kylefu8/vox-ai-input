@@ -66,6 +66,8 @@ python -m pytest -q
 
 仓库根目录的 `AGENTS.md` 已经写入 `Fresh Clone Bootstrap` 规则。新的 Codex session 进入项目后，会看到这个规则。
 
+完整入口提示词见 `docs/codex-entry-prompts.md`。
+
 新电脑 clone 后可以这样启动 Codex：
 
 ```powershell
