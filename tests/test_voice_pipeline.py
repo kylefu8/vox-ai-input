@@ -123,3 +123,34 @@ def test_process_audio_saves_history(tmp_path):
     assert kwargs["source"] == "audio"
     assert kwargs["metadata"]["polish_profile"] == "azure"
     assert result.history_id == "hist-1"
+
+
+def test_process_audio_marks_polish_fallback_in_history(tmp_path):
+    wav_file = tmp_path / "test.wav"
+    wav_file.write_bytes(b"fake wav data")
+
+    transcriber = MagicMock()
+    transcriber.transcribe.return_value = "原始文字"
+    polisher = MagicMock()
+    polisher.polish.return_value = "原始文字"
+    polisher.last_fallback_to_raw = True
+    polisher.last_error = "network failed"
+    paste = MagicMock()
+    history_store = MagicMock()
+
+    pipeline = VoicePipeline(
+        transcriber=transcriber,
+        polisher=polisher,
+        polish_enabled=True,
+        paste_func=paste,
+        history_store=history_store,
+        history_metadata={"polish_profile": "default"},
+    )
+
+    result = pipeline.process_audio(wav_file)
+
+    assert result.polish_fallback is True
+    assert result.polish_error == "network failed"
+    kwargs = history_store.append.call_args.kwargs
+    assert kwargs["metadata"]["polish_fallback"] is True
+    assert kwargs["metadata"]["polish_error"] == "network failed"

@@ -8,7 +8,7 @@
 
 支持中英文混合识别、口述符号自动转换（如"艾特" → @），AI 自动修正标点和语法，可选实时翻译到 9 种语言。
 
-> **v0.0.7 本地优先重构 + 设置页瘦身！** 在线转写已移除，本地转写成为核心路径；润色支持 Azure OpenAI、OpenAI-compatible 和 Anthropic，并统一为 endpoint/key/model 的简化配置。
+> **v0.0.8 悬浮麦克风 + 更强润色！** 新增可拖动录音按钮、中英文界面、深浅色切换、软件说明弹窗、可选 API 类型（含 OpenAI Responses），并升级默认语音清理 prompt。
 
 ## 功能特性
 
@@ -18,8 +18,9 @@
   - Whisper Small（多语言通用，~610MB）
   - Paraformer 流式（中英实时转写，边说边出字）
   - 设置窗口一键下载模型
-- **AI 智能润色** — 自动修正标点、语法、去口语填充词
-- **多 API 润色端点** — 支持 Azure OpenAI、OpenAI-compatible、Anthropic，设置中自动识别 API 类型
+- **AI 智能润色** — 自动修正标点、去口水词、自动分段，并把口述清单整理成编号事项
+- **多 API 润色端点** — 支持 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和 OpenAI-compatible 网关
+- **悬浮录音控制** — 可拖动的置顶麦克风按钮，可点击开始/停止录音，并同步快捷键/托盘状态
 - **历史记录** — 自动保存最近输出，可在设置窗口回看并复制
 - **中英混合识别** — 中英文夹杂也能准确识别，技术术语保留英文
 - **符号口述转换** — 说"艾特"输出 @、说"井号"输出 #
@@ -27,7 +28,7 @@
 - **高级 Prompt 覆盖** — 默认收起，避免误改导致润色跑偏
 - **录音倒计时** — 录音接近上限时屏幕右下角半透明倒数提示
 - **实时日志窗口** — 深色主题滚动日志，方便排查问题
-- **现代设置界面** — 左侧导航、更聚焦的页面结构，支持深色/浅色主题
+- **现代设置界面** — 左侧导航、更聚焦的页面结构，支持中文/英文界面和深色/浅色主题
 - **程序图标** — Fluent 风格蓝紫渐变麦克风，应用到 exe、安装包、设置窗口
 - **快捷键热更新** — 修改快捷键立即生效，无需重启
 - **系统托盘常驻** — 渐变麦克风图标，状态一目了然
@@ -86,8 +87,11 @@ python run.py
 |------|------|
 | **长按快捷键** | 开始录音（托盘图标变红） |
 | **松开快捷键** | 停止录音 → 转写 → 润色 → 粘贴 |
+| **点击悬浮麦克风** | 开始/停止录音，状态会和快捷键同步 |
+| **拖动悬浮麦克风** | 移动位置，松手后自动保存 |
 | **录音中按 Esc** | 取消当前录音 |
 | **托盘右键 → 设置** | 打开设置窗口 |
+| **设置右上角 → 界面/主题/关于** | 切换界面语言、深浅配色，查看软件说明 |
 | **托盘右键 → 日志** | 打开实时日志窗口 |
 | **托盘右键 → 检查更新** | 检查 GitHub 新版本 |
 
@@ -119,6 +123,7 @@ python run.py
 | `python run.py` | 正常模式（托盘运行） |
 | `python run.py --test` | 测试模式（按回车控制录音） |
 | `python run.py --visible` | 正常模式 + 保留控制台（调试用） |
+| `python run.py --open-settings` | 启动应用并立即打开设置窗口 |
 | `python run.py --version` | 显示版本号 |
 
 ## 配置说明
@@ -127,25 +132,30 @@ python run.py
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
+| `ui.language` | 设置窗口和托盘菜单语言：`zh-CN` / `en` | `zh-CN` |
+| `ui.theme` | 设置窗口配色：`dark` / `light` | `dark` |
+| `ui.floating_control.enabled` | 是否显示可拖动悬浮录音按钮 | `true` |
 | `stt.backend` | 转写引擎，固定为本地离线 | `local` |
 | `stt.model_type` | 本地模型：`sense_voice`、`whisper_small` 或 `paraformer_streaming` | `sense_voice` |
 | `recording.sample_rate` | 采样率 (Hz) | `16000` |
 | `recording.channels` | 声道数 | `1` |
 | `recording.max_duration` | 最长录音秒数 | `60` |
-| `hotkey.combination` | 录音快捷键 | `alt+z` |
+| `hotkey.combination` | 录音快捷键 | `ctrl+shift+space` |
 | `polish.enabled` | 是否启用 AI 润色 | `false` |
 | `polish.profile` | 润色使用的 LLM profile | `default` |
 | `polish.translate_to` | 翻译目标语言代码（留空不翻译） | `""` |
 | `polish.show_original` | 翻译时同时输出润色后的原文 | `false` |
+| `llm_profiles.default.provider` | API 类型：`auto`、`openai_compatible`、`openai_responses` 或 `anthropic` | `auto` |
 | `llm_profiles.default.endpoint` | 润色 API endpoint | `""` |
+| `llm_profiles.default.base_url` | 可选的运行时 API base，通常由 endpoint 自动解析填入 | 未设置 |
 | `llm_profiles.default.api_key` | 润色 API Key | `""` |
-| `llm_profiles.default.model` | 模型名；Azure 时填写部署名 | `""` |
+| `llm_profiles.default.model` | 模型名 | `""` |
 | `history.enabled` | 是否保存最近输出历史 | `true` |
 | `history.max_entries` | 历史记录最多保留条数 | `100` |
 
 ### 润色 API 设置
 
-设置窗口的“润色”页只需要填写 Endpoint、API Key、模型名称。点击“验证并识别”后会自动尝试 OpenAI-compatible、Azure OpenAI 和 Anthropic；点击“获取模型”会尽量从 endpoint 拉取可用模型列表。也可以手动编辑：
+设置窗口的“润色”页现在可以选择 API 类型，并填写 Endpoint、API Key、模型名称。`OpenAI Chat Completions` 对应 `/v1/chat/completions`，`OpenAI Responses` 对应 `/v1/responses`，`Anthropic Messages` 对应 `/v1/messages`；也可以保留自动识别。点击“获取模型”会尽量从 endpoint 拉取可用模型列表，并可在后台解析缺失的 `/v1`。界面仍显示你输入的 endpoint，实际 API base 会保存为 `base_url` 并在运行时使用。也可以手动编辑：
 
 ```yaml
 polish:
@@ -154,10 +164,11 @@ polish:
 
 llm_profiles:
   default:
-    provider: "auto"
-    endpoint: "https://api.deepseek.com/v1"
+    provider: "openai_responses"
+    endpoint: "https://api.openai.com"
+    base_url: "https://api.openai.com/v1"
     api_key: "sk-..."
-    model: "deepseek-chat"
+    model: "gpt-5.4-mini"
 ```
 
 ## 项目结构
@@ -183,7 +194,9 @@ vox-ai-input/
 │   ├── hotkey.py           # 全局热键监听
 │   ├── output.py           # 剪贴板 + 模拟粘贴
 │   ├── tray.py             # 系统托盘（渐变麦克风图标）
-│   ├── settings_window.py  # 深色主题设置窗口
+│   ├── floating_control.py # 可拖动屏幕录音按钮
+│   ├── i18n.py             # 轻量中英文界面文案
+│   ├── settings_window.py  # 支持深浅色主题的设置窗口
 │   ├── log_window.py       # 实时日志查看窗口
 │   ├── countdown.py        # 录音倒计时浮窗（Win32 Layered Window）
 │   ├── updater.py          # GitHub 版本检查与更新
@@ -193,7 +206,7 @@ vox-ai-input/
 │   ├── paths.py            # 路径工具（兼容打包/源码模式）
 │   ├── interfaces.py       # Protocol 接口定义
 │   └── logger.py           # 统一日志（UTF-8 安全）
-├── tests/                  # 120+ 测试用例
+├── tests/                  # 170+ 测试用例
 ├── models/                 # 本地 STT 模型（用户按需下载，不含在 git 中）
 ├── assets/sounds/          # 录音提示音
 ├── scripts/                # 构建辅助脚本
@@ -242,7 +255,7 @@ pyinstaller build.spec --clean --noconfirm
 - **文字润色 + 翻译**: Azure OpenAI / OpenAI-compatible / Anthropic
 - **热键监听**: pynput
 - **录音**: sounddevice + soundfile
-- **UI**: tkinter（深色主题设置窗口 + 日志窗口）+ pystray（系统托盘）
+- **UI**: tkinter（设置窗口、日志窗口、悬浮按钮）+ pystray（系统托盘）
 - **倒计时浮窗**: Win32 Layered Window（逐像素 Alpha 透明）
 - **打包**: PyInstaller（--onedir）+ Inno Setup（安装包）
 - **CI/CD**: GitHub Actions

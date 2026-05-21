@@ -10,12 +10,17 @@ from src.llm_clients import (
     AnthropicLLMClient,
     AzureOpenAILLMClient,
     OpenAICompatibleLLMClient,
+    OpenAIResponsesLLMClient,
     LLMOptions,
     create_llm_client,
     detect_llm_profile,
     list_llm_models,
+    list_llm_models_with_base_url,
     validate_llm_profile,
+    validate_llm_profile_for_provider,
     _extract_anthropic_text,
+    _extract_openai_responses_text,
+    _openai_base_url_candidates,
 )
 
 
@@ -42,6 +47,17 @@ def test_factory_creates_openai_compatible_client():
             "model": "deepseek-chat",
         })
     assert isinstance(client, OpenAICompatibleLLMClient)
+
+
+def test_factory_creates_openai_responses_client():
+    """openai_responses profile 应创建 Responses API client。"""
+    client = create_llm_client({
+        "provider": "openai_responses",
+        "endpoint": "https://api.openai.com/v1",
+        "api_key": "key",
+        "model": "gpt-5.4-mini",
+    })
+    assert isinstance(client, OpenAIResponsesLLMClient)
 
 
 def test_factory_accepts_generic_azure_profile():
@@ -80,6 +96,32 @@ def test_openai_compatible_uses_max_tokens():
     assert "max_completion_tokens" not in kwargs
 
 
+def test_openai_responses_posts_responses_payload():
+    """Responses adapter 应调用 /responses 并解析 output_text。"""
+    fake_response = MagicMock()
+    fake_response.read.return_value = b'{"output_text":"ok"}'
+    fake_context = MagicMock()
+    fake_context.__enter__.return_value = fake_response
+
+    with patch("src.llm_clients.urllib.request.urlopen", return_value=fake_context) as mock_urlopen:
+        client = OpenAIResponsesLLMClient(
+            base_url="https://api.openai.com/v1",
+            api_key="key",
+            model="gpt-5.4-mini",
+        )
+        result = client.complete_text("system", "user", LLMOptions(max_tokens=42))
+
+    assert result == "ok"
+    request = mock_urlopen.call_args.args[0]
+    assert request.full_url == "https://api.openai.com/v1/responses"
+    payload = __import__("json").loads(request.data.decode("utf-8"))
+    assert payload["model"] == "gpt-5.4-mini"
+    assert payload["instructions"] == "system"
+    assert payload["input"] == "user"
+    assert payload["max_output_tokens"] == 42
+    assert "temperature" not in payload
+
+
 def test_factory_creates_anthropic_client():
     """anthropic profile 应创建 AnthropicLLMClient。"""
     client = create_llm_client({
@@ -110,7 +152,7 @@ def test_validate_llm_profile_makes_probe_request():
     assert profile["timeout"] == 20.0
     assert profile["max_retries"] == 0
     options = fake_client.complete_text.call_args.args[2]
-    assert options.max_tokens == 16
+    assert options.max_tokens == 64
     assert options.temperature == 0
 
 
@@ -147,9 +189,11 @@ def test_detect_llm_profile_returns_first_working_candidate():
 
     assert response == "OK"
     assert profile["provider"] == "openai_compatible"
-    assert profile["base_url"] == "https://api.example.com"
+    assert profile["endpoint"] == "https://api.example.com"
+    assert profile["base_url"] == "https://api.example.com/v1"
     assert errors == []
     assert calls[0]["provider"] == "openai_compatible"
+    assert calls[0]["base_url"] == "https://api.example.com/v1"
 
 
 def test_detect_llm_profile_reports_all_errors():
@@ -164,20 +208,46 @@ def test_detect_llm_profile_reports_all_errors():
 
     assert "没有找到可用的润色 API" in message
     assert "Anthropic" in message
-    assert "OpenAI-compatible" in message
+    assert "OpenAI Chat Completions" in message
+    assert "OpenAI Responses" in message
 
 
-def test_list_llm_models_dedupes_available_provider_lists():
-    """模型列表会合并 OpenAI-compatible、Azure 和 Anthropic 返回值。"""
-    payloads = [
-        {"data": [{"id": "gpt-a"}, {"id": "shared"}]},
-        {"data": [{"id": "azure-a"}, {"id": "shared"}]},
-        {"data": [{"id": "claude-a"}]},
-    ]
+def test_validate_llm_profile_for_provider_keeps_explicit_responses_type():
+    """用户选择 Responses 时不回退成 Chat Completions。"""
+    calls = []
+
+    def fake_validate(profile):
+        calls.append(profile)
+        if profile["provider"] == "openai_responses":
+            return "OK"
+        raise RuntimeError("wrong provider")
+
+    with patch("src.llm_clients.validate_llm_profile", side_effect=fake_validate):
+        profile, response, errors = validate_llm_profile_for_provider(
+            "openai_responses",
+            "https://api.example.com",
+            "key",
+            "model-a",
+        )
+
+    assert response == "OK"
+    assert profile["provider"] == "openai_responses"
+    assert profile["endpoint"] == "https://api.example.com"
+    assert profile["base_url"] == "https://api.example.com/v1"
+    assert errors == []
+    assert [call["provider"] for call in calls] == ["openai_responses"]
+
+
+def test_list_llm_models_returns_openai_models_without_unrelated_errors():
+    """OpenAI-compatible 成功后不继续混入 Azure/Anthropic 探测错误。"""
+    calls = []
 
     def fake_urlopen(request, timeout):
+        calls.append(request.full_url)
         response = MagicMock()
-        response.read.return_value = __import__("json").dumps(payloads.pop(0)).encode("utf-8")
+        response.read.return_value = __import__("json").dumps({
+            "data": [{"id": "gpt-a"}, {"id": "shared"}],
+        }).encode("utf-8")
         context = MagicMock()
         context.__enter__.return_value = response
         return context
@@ -185,8 +255,38 @@ def test_list_llm_models_dedupes_available_provider_lists():
     with patch("src.llm_clients.urllib.request.urlopen", side_effect=fake_urlopen):
         models, errors = list_llm_models("https://api.example.com", "key")
 
-    assert models == ["gpt-a", "shared", "azure-a", "claude-a"]
+    assert models == ["gpt-a", "shared"]
     assert errors == []
+    assert calls == ["https://api.example.com/v1/models"]
+
+
+def test_list_llm_models_with_base_url_returns_resolved_v1_without_display_mutation():
+    """模型列表解析出 /v1 base_url，供保存使用。"""
+    def fake_urlopen(request, timeout):
+        response = MagicMock()
+        response.read.return_value = __import__("json").dumps({
+            "data": [{"id": "gpt-a"}],
+        }).encode("utf-8")
+        context = MagicMock()
+        context.__enter__.return_value = response
+        return context
+
+    with patch("src.llm_clients.urllib.request.urlopen", side_effect=fake_urlopen):
+        models, errors, base_url = list_llm_models_with_base_url("https://api.example.com", "key")
+
+    assert models == ["gpt-a"]
+    assert errors == []
+    assert base_url == "https://api.example.com/v1"
+
+
+def test_openai_base_url_candidates_prefer_v1_for_root_endpoint():
+    assert _openai_base_url_candidates("https://llm.example.com/") == [
+        "https://llm.example.com/v1",
+        "https://llm.example.com",
+    ]
+    assert _openai_base_url_candidates("https://llm.example.com/v1") == [
+        "https://llm.example.com/v1",
+    ]
 
 
 def test_extract_anthropic_text():
@@ -199,6 +299,20 @@ def test_extract_anthropic_text():
         ]
     }
     assert _extract_anthropic_text(data) == "你好，世界。"
+
+
+def test_extract_openai_responses_text_from_output_blocks():
+    data = {
+        "output": [
+            {
+                "content": [
+                    {"type": "output_text", "text": "你"},
+                    {"type": "output_text", "text": "好"},
+                ]
+            }
+        ]
+    }
+    assert _extract_openai_responses_text(data) == "你好"
 
 
 def test_anthropic_complete_text_posts_messages_payload():

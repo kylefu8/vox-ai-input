@@ -1,6 +1,19 @@
 # Vox AI Input 配置模板
 # 复制此文件为 config.yaml，按需配置本地转写和 AI 润色
 
+# 界面偏好
+ui:
+    # 设置窗口语言: zh-CN / en
+    language: "zh-CN"
+    # 配色主题: dark / light
+    theme: "dark"
+    # 屏幕悬浮录音按钮
+    floating_control:
+        enabled: true
+        # x/y 会在拖动后自动保存；留空则默认显示在屏幕右侧
+        x:
+        y:
+
 # 转写引擎设置
 stt:
     # 后端固定为本地离线
@@ -25,7 +38,7 @@ hotkey:
     # 长按触发录音的快捷键
     # macOS: ctrl+shift+space
     # Windows: ctrl+shift+space
-    combination: "alt+z"
+    combination: "ctrl+shift+space"
 
 # 润色设置
 polish:
@@ -40,12 +53,14 @@ polish:
     show_original: false
 
 # 文字润色/翻译模型配置
-# 设置窗口只需要填写 endpoint、api_key、model，然后点击“验证并识别”。
-# provider 可省略或设为 auto；验证成功后会自动识别为 openai_compatible / azure_openai / anthropic。
+# 设置窗口只需要填写 API 类型、endpoint、api_key、model，然后点击“验证”。
+# provider 可设为 auto，或显式选择 openai_compatible / openai_responses / anthropic。
+# OpenAI-compatible endpoint 可以不写 /v1；验证/获取模型成功后会在 base_url 中保存后台解析结果。
 llm_profiles:
     default:
         provider: "auto"
         endpoint: ""
+        # base_url: ""  # 可选：后台解析后的实际 API base，不在设置窗口里显示
         api_key: ""
         model: ""
 

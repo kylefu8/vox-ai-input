@@ -11,6 +11,7 @@ from pathlib import Path
 
 import yaml
 
+from src.i18n import normalize_ui_language
 from src.logger import setup_logger
 from src.paths import get_project_root
 
@@ -206,6 +207,55 @@ def get_history_config(config):
     }
 
 
+def get_ui_config(config):
+    """
+    从配置字典中提取界面偏好。
+
+    Args:
+        config: 完整的配置字典
+
+    Returns:
+        dict: 包含 language, theme
+    """
+    ui = config.get("ui", {}) or {}
+    theme = str(ui.get("theme", "dark")).strip().lower()
+    if theme not in ("dark", "light"):
+        theme = "dark"
+    return {
+        "language": normalize_ui_language(ui.get("language", "zh-CN")),
+        "theme": theme,
+    }
+
+
+def _optional_int(value):
+    """Return int(value) when possible, otherwise None."""
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_floating_control_config(config):
+    """
+    从配置字典中提取屏幕悬浮录音按钮配置。
+
+    Args:
+        config: 完整的配置字典
+
+    Returns:
+        dict: 包含 enabled, x, y
+    """
+    ui = config.get("ui", {}) or {}
+    floating = ui.get("floating_control", {}) or {}
+    return {
+        "enabled": bool(floating.get("enabled", True)),
+        "x": _optional_int(floating.get("x")),
+        "y": _optional_int(floating.get("y")),
+    }
+
+
 def get_llm_profile_config(config, profile_name=None):
     """
     返回当前润色 LLM profile。
@@ -266,7 +316,7 @@ def _validate_llm_profile_for_save(config):
         require_any(("endpoint", "base_url"), "Endpoint")
         require_key()
         require_any(("model", "deployment"), "模型名")
-    elif provider == "openai_compatible":
+    elif provider in ("openai_compatible", "openai_responses"):
         require_any(("endpoint", "base_url"), "Endpoint")
         require_key()
         require("model", "模型名")

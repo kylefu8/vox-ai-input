@@ -130,6 +130,45 @@ class TestFullPipeline:
             app._on_hotkey_press()
             app._tray.set_state.assert_called_with("idle")
 
+    def test_activity_state_updates_floating_control(self):
+        """状态变化应同步到托盘和悬浮按钮。"""
+        app = _make_app()
+        app._floating = MagicMock()
+
+        app._set_activity_state("recording")
+
+        app._tray.set_state.assert_called_with("recording")
+        app._floating.set_state.assert_called_once_with("recording", message=None)
+
+    def test_floating_toggle_starts_recording_when_idle(self):
+        """空闲时点击悬浮按钮应开始录音。"""
+        app = _make_app()
+
+        with patch.object(app._recorder, "start", return_value=True) as mock_start, \
+             patch("src.app.play_start_sound"):
+            app._on_floating_toggle()
+
+        mock_start.assert_called_once()
+
+    def test_floating_toggle_stops_recording_when_active(self):
+        """录音中点击悬浮按钮应停止并进入处理流程。"""
+        app = _make_app()
+
+        with patch.object(type(app._recorder), "is_recording",
+                          new_callable=PropertyMock, return_value=True), \
+             patch.object(app._recorder, "stop",
+                          return_value=Path("/tmp/test.wav")) as mock_stop, \
+             patch("src.app.play_stop_sound"), \
+             patch("threading.Thread") as mock_thread_cls:
+
+            mock_thread = MagicMock()
+            mock_thread_cls.return_value = mock_thread
+
+            app._on_floating_toggle()
+
+        mock_stop.assert_called_once()
+        assert mock_thread.start.call_count >= 1
+
     def test_hotkey_release_triggers_processing(self):
         """松开热键应该停止录音并启动后台处理。"""
         app = _make_app()
@@ -550,6 +589,39 @@ class TestHotReload:
         assert app._recorder.sample_rate == 44100
         assert app._recorder.channels == 2
         assert app._recorder.max_duration == 120
+
+    def test_reload_config_updates_floating_control(self):
+        """热重载应该更新悬浮按钮配置。"""
+        app = _make_app()
+        app._floating = MagicMock()
+        new_config = {
+            **MOCK_CONFIG,
+            "ui": {
+                "language": "en",
+                "theme": "light",
+                "floating_control": {
+                    "enabled": False,
+                    "x": 100,
+                    "y": 200,
+                },
+            },
+        }
+
+        with patch("src.app.save_config"), \
+             patch("src.model_manager.is_model_ready", return_value=True), \
+             patch("src.model_manager.get_model_dir", return_value="models/sense_voice"), \
+             patch("src.local_transcriber.LocalTranscriber", return_value=MagicMock()), \
+             patch("src.azure_client.AzureOpenAI"):
+            success, msg = app._reload_config(new_config)
+
+        assert success is True
+        app._floating.configure.assert_called_once_with(
+            enabled=False,
+            x=100,
+            y=200,
+            theme="light",
+            language="en",
+        )
 
     def test_reload_config_clears_client_cache(self):
         """热重载应该清除旧的 Azure 客户端缓存。"""

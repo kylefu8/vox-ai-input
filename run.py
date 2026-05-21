@@ -11,7 +11,7 @@ from src.logger import setup_logger
 
 log = setup_logger("main")
 
-__version__ = "0.0.7"
+__version__ = "0.0.8"
 
 
 def _configure_windows_dpi():
@@ -153,7 +153,7 @@ def _hide_console_window():
         log.debug("隐藏控制台窗口失败（不影响运行）: %s", e)
 
 
-def run_app(hide_console=True):
+def run_app(hide_console=True, open_settings=False):
     """
     正常模式：启动 AIInputApp，长按快捷键说话。
 
@@ -161,6 +161,7 @@ def run_app(hide_console=True):
 
     Args:
         hide_console: 是否隐藏控制台窗口，默认 True
+        open_settings: 启动后是否自动打开设置窗口
     """
     from src.app import AIInputApp
 
@@ -170,7 +171,7 @@ def run_app(hide_console=True):
 
     try:
         app = AIInputApp()
-        app.run()
+        app.run(open_settings=open_settings)
     except KeyboardInterrupt:
         log.info("")
         log.info("程序已退出，再见！")
@@ -239,6 +240,7 @@ def main():
         python run.py             # 正常模式（隐藏控制台，托盘运行）
         python run.py --test      # 测试模式（按回车控制录音）
         python run.py --visible   # 正常模式但保留控制台窗口（调试用）
+        python run.py --open-settings  # 启动后自动打开设置窗口
         python run.py --version   # 显示版本号
     """
     if "--version" in sys.argv:
@@ -295,12 +297,14 @@ def main():
     except Exception:
         pass
 
+    open_settings = "--open-settings" in sys.argv or "--settings" in sys.argv
+
     if "--test" in sys.argv:
         run_test_mode()
     elif "--visible" in sys.argv:
-        run_app(hide_console=False)
+        run_app(hide_console=False, open_settings=open_settings)
     else:
-        run_app()
+        run_app(open_settings=open_settings)
 
 
 if __name__ == "__main__":

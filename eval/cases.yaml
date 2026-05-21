@@ -1,0 +1,198 @@
+version: 1
+description: >
+  Vox AI Input polishing/translation evaluation cases. These samples are
+  synthetic but shaped like real speech transcripts, with Chinese, English,
+  and mixed Chinese/English inputs.
+
+cases:
+  - id: zh_filler_basic
+    title: 中文口水词和缺标点
+    language: zh
+    text: "嗯那个我觉得这个版本就是整体比昨天好很多但是还有两个地方第一个是按钮有点挤第二个是深色模式还是稍微有点暗"
+    categories: [filler, punctuation, list]
+    preserve_terms: []
+    translation_targets: [en]
+
+  - id: zh_todo_list
+    title: 中文待办列表
+    language: zh
+    text: "明天上午我需要先把评测脚本跑一遍然后整理模型对比报告最后把推荐的提示词更新到项目里"
+    categories: [todo, list, punctuation]
+    preserve_terms: []
+    translation_targets: [en]
+
+  - id: zh_meeting_notes
+    title: 中文会议要点
+    language: zh
+    text: "今天讨论了三个事情第一个本地转录效果已经够用了第二个在线转录可以先去掉第三个润色部分要重点测试翻译和双语输出"
+    categories: [meeting, list, polish_translate]
+    preserve_terms: []
+    translation_targets: [en]
+
+  - id: zh_asr_homophone
+    title: 中文同音和 ASR 错字
+    language: zh
+    text: "这个接口的恩德破因特不用写微一程序自己补然后模型明称如果能拉到列表就直接选"
+    categories: [asr_error, technical]
+    preserve_terms: [endpoint, v1]
+    translation_targets: [en]
+
+  - id: zh_numbers_dates
+    title: 中文数字日期金额
+    language: zh
+    text: "下周三下午三点半开会预算大概一千两百美元转化率目标是百分之十五"
+    categories: [numbers, dates, punctuation]
+    preserve_terms: []
+    translation_targets: [en]
+
+  - id: zh_symbols_email
+    title: 口述符号和邮箱
+    language: zh
+    text: "我的邮箱是 kyle 艾特 example 点 com 文档地址是 https 冒号 斜杠斜杠 docs 点 example 点 com 斜杠 api"
+    categories: [symbols, url, email]
+    preserve_terms: [kyle@example.com, docs.example.com, api]
+    translation_targets: [en]
+
+  - id: zh_explicit_summary
+    title: 明确要求提炼要点
+    language: zh
+    text: "帮我总结成要点我们这次版本主要改了三个方面一个是设置页面重新设计一个是多语言和主题切换另一个是润色 API 支持多种 endpoint"
+    categories: [explicit_summary, list, technical]
+    preserve_terms: [endpoint, API]
+    translation_targets: [en]
+
+  - id: zh_message_rewrite
+    title: 明确要求写成消息
+    language: zh
+    text: "帮我写成一段发给同事的话今天这个评测我会先跑小样本如果结果稳定明天再跑完整模型矩阵"
+    categories: [explicit_rewrite, message]
+    preserve_terms: []
+    translation_targets: [en]
+
+  - id: zh_short_ack
+    title: 极短确认
+    language: zh
+    text: "好的可以"
+    categories: [short]
+    preserve_terms: []
+    translation_targets: [en]
+
+  - id: zh_long_paragraph
+    title: 中文长段落自动分段
+    language: zh
+    text: "我刚才试了一下这个语音输入整体是顺的但是有一个问题长文本出来之后可读性不太好因为所有句子都挤在一起所以我觉得以后可以根据语义自动分段如果里面有第一第二第三这种结构就直接转成列表"
+    categories: [paragraphing, list]
+    preserve_terms: []
+    translation_targets: [en]
+
+  - id: mixed_endpoint_api
+    title: 中英混杂 API 设置
+    language: mixed
+    text: "这个 llm.haph.fun 的 endpoint 用户可以不写 v1 但是后台要保存 base_url 然后 API 类型可以选 Chat Completions 或者 Responses"
+    categories: [mixed, technical, api]
+    preserve_terms: [llm.haph.fun, endpoint, v1, base_url, API, Chat Completions, Responses]
+    translation_targets: [en, zh]
+
+  - id: mixed_models
+    title: 中英混杂模型名
+    language: mixed
+    text: "我们先测 gpt-5.4 gpt-5.4-mini gpt-5.5 还有 gpt-4o 和 gpt-4o-mini 看看哪个润色最稳"
+    categories: [mixed, model_names]
+    preserve_terms: [gpt-5.4, gpt-5.4-mini, gpt-5.5, gpt-4o, gpt-4o-mini]
+    translation_targets: [en, zh]
+
+  - id: mixed_code_path
+    title: 中英混杂文件路径和命令
+    language: mixed
+    text: "你帮我看一下 src slash polisher dot py 里面的 build_prompt 然后运行 python scripts slash eval_polish dot py"
+    categories: [mixed, code, path]
+    preserve_terms: [src/polisher.py, build_prompt, python, scripts/eval_polish.py]
+    translation_targets: [en, zh]
+
+  - id: mixed_provider_error
+    title: 中英混杂错误说明
+    language: mixed
+    text: "这个 provider 返回 model_not_found 但是 models 列表里能看到 claude-sonnet 所以应该是账号分组没有可用渠道"
+    categories: [mixed, error, technical]
+    preserve_terms: [provider, model_not_found, models, claude-sonnet]
+    translation_targets: [en, zh]
+
+  - id: en_filler_basic
+    title: English filler cleanup
+    language: en
+    text: "um I think the new settings page is better but you know the save button still feels a little cramped and the dark theme is too heavy"
+    categories: [english, filler, punctuation]
+    preserve_terms: []
+    translation_targets: [zh]
+
+  - id: en_todo_list
+    title: English todo list
+    language: en
+    text: "tomorrow I need to run the small eval first then compare the model outputs and finally update the default prompt"
+    categories: [english, todo, list]
+    preserve_terms: []
+    translation_targets: [zh]
+
+  - id: en_technical_api
+    title: English technical terms
+    language: en
+    text: "please check whether the endpoint supports the Responses API because some new models do not work with chat completions anymore"
+    categories: [english, technical, api]
+    preserve_terms: [endpoint, Responses API, chat completions]
+    translation_targets: [zh]
+
+  - id: en_meeting_note
+    title: English meeting note
+    language: en
+    text: "we agreed to remove online transcription keep local transcription as the default and focus the next round on polish and translation quality"
+    categories: [english, meeting, punctuation]
+    preserve_terms: []
+    translation_targets: [zh]
+
+  - id: en_short_ack
+    title: English short acknowledgment
+    language: en
+    text: "sounds good let's continue"
+    categories: [english, short]
+    preserve_terms: []
+    translation_targets: [zh]
+
+  - id: mixed_translation_request
+    title: 中英混杂翻译请求
+    language: mixed
+    text: "把这句话翻译成英文 我们已经支持 OpenAI Responses API 但是 gpt-4o-mini 这个 endpoint 只支持 chat completions"
+    categories: [mixed, explicit_translate, api]
+    preserve_terms: [OpenAI Responses API, gpt-4o-mini, endpoint, chat completions]
+    translation_targets: [en, zh]
+
+  - id: long_zh_product_feedback
+    title: 长中文产品反馈
+    language: zh
+    text: "我刚才连续用了差不多十分钟这个语音输入整体感觉比上一版顺很多本地转录出来的文字基本能直接用但是润色这里我觉得还可以再聪明一点第一短句子不要过度整理比如好的可以这种就保持简单第二长句子如果里面有先然后最后或者第一第二第三这种结构最好自动变成列表第三中英混杂的技术词一定要保留比如 endpoint base_url Responses API Chat Completions 还有 gpt-5.4-mini 不要翻译成很奇怪的中文第四如果我明确说帮我总结成要点或者写成消息那它可以主动改写否则默认还是忠实一点"
+    categories: [long, zh, product_feedback, list, technical]
+    preserve_terms: [endpoint, base_url, Responses API, Chat Completions, gpt-5.4-mini]
+    translation_targets: [en]
+
+  - id: long_zh_meeting_minutes
+    title: 长中文会议整理
+    language: zh
+    text: "帮我整理成会议纪要今天我们主要讨论了四个事情第一个是本地转录已经足够稳定所以在线转录先不做第二个是设置页面现在比之前清楚但是保存按钮和模型列表还可以继续压缩第三个是润色功能要区分默认清理和高级改写默认只去口水词加标点修错字高级模式再做总结待办和邮件化第四个是模型评测先用 llm.haph.fun 跑 gpt-5.4-mini gpt-5.4 gpt-4o-mini 看看速度质量和术语保留哪个平衡最好最后行动项是我来补 prompt 你来跑长文本测试然后把结果做成网页"
+    categories: [long, zh, explicit_summary, meeting, list, technical]
+    preserve_terms: [llm.haph.fun, gpt-5.4-mini, gpt-5.4, gpt-4o-mini, prompt]
+    translation_targets: [en]
+
+  - id: long_mixed_api_workflow
+    title: 长中英混杂 API 工作流
+    language: mixed
+    text: "我们现在的 API provider 设置流程可以再顺一下 用户先填 endpoint 和 API key 然后点获取模型 如果 endpoint 没写 v1 后台测试的时候自动补成 base_url 但是界面上仍然显示用户原来输入的地址 接下来用户在下拉框里选择 API 类型 可以是 auto openai_compatible openai_responses 或者 anthropic 如果模型是 gpt-5.4-mini 这种 Responses only 的就应该走 Responses API 如果模型是 gpt-4o-mini 这种只支持 Chat Completions 的就不要误判 最后验证失败的时候错误信息要说明是哪一个 backend 失败比如 /responses 还是 /chat/completions"
+    categories: [long, mixed, api, workflow, technical]
+    preserve_terms: [API provider, endpoint, API key, v1, base_url, auto, openai_compatible, openai_responses, anthropic, gpt-5.4-mini, Responses API, gpt-4o-mini, Chat Completions, /responses, /chat/completions]
+    translation_targets: [en, zh]
+
+  - id: long_en_product_feedback
+    title: Long English product feedback
+    language: en
+    text: "um after using the app for a longer dictation session I think the local transcription is already good enough for daily work but the polishing layer needs a bit more product judgment first short acknowledgments like sounds good or okay should stay short second long operational notes should be split into paragraphs or numbered lists when the structure is obvious third technical terms such as endpoint base_url Responses API Chat Completions API key and gpt-5.4-mini should remain unchanged in Chinese translation and finally if I explicitly say turn this into action items or meeting notes then the model can summarize otherwise it should preserve the original meaning as much as possible"
+    categories: [long, english, product_feedback, list, technical]
+    preserve_terms: [endpoint, base_url, Responses API, Chat Completions, API key, gpt-5.4-mini]
+    translation_targets: [zh]

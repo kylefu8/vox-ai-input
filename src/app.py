@@ -24,6 +24,8 @@ from src.config import (
     get_history_config,
     get_polish_config,
     get_stt_config,
+    get_ui_config,
+    get_floating_control_config,
 )
 from src.hotkey import HotkeyListener
 from src.history import HistoryStore
@@ -33,6 +35,7 @@ from src.notifier import play_start_sound, play_stop_sound, create_default_sound
 from src.output import paste_text
 from src.countdown import CountdownOverlay
 from src.preview_overlay import PreviewOverlay
+from src.floating_control import FloatingControl
 from src.log_window import LogWindow
 from src.recorder import check_audio_input
 from src.runtime_components import create_polisher, create_recorder, create_transcriber_runtime
@@ -72,6 +75,7 @@ class AIInputApp:
         rec_cfg = get_recording_config(self._config)
         hotkey_cfg = get_hotkey_config(self._config)
         polish_cfg = get_polish_config(self._config)
+        ui_cfg = get_ui_config(self._config)
 
         # 检查麦克风是否可用（不可用则提示并退出）
         check_audio_input()
@@ -142,6 +146,20 @@ class AIInputApp:
         # 预览浮窗（实时显示转写/润色状态和结果）
         self._preview = PreviewOverlay()
 
+        # 屏幕悬浮录音按钮（可拖动；与热键/托盘共用同一状态）
+        floating_cfg = get_floating_control_config(self._config)
+        self._floating = FloatingControl(
+            enabled=floating_cfg["enabled"],
+            x=floating_cfg["x"],
+            y=floating_cfg["y"],
+            theme=ui_cfg["theme"],
+            language=ui_cfg["language"],
+            on_toggle=self._on_floating_toggle,
+            on_cancel=self._cancel_recording,
+            on_settings=self._open_settings,
+            on_position=self._on_floating_position,
+        )
+
         # 实时日志窗口
         self._log_window = LogWindow()
 
@@ -155,11 +173,12 @@ class AIInputApp:
             on_history=self._open_history,
             on_log=self._open_log,
             on_update=self._check_update,
+            language=ui_cfg["language"],
         )
 
         log.info("所有模块初始化完成！")
 
-    def run(self):
+    def run(self, open_settings=False):
         """
         启动应用。
 
@@ -168,6 +187,7 @@ class AIInputApp:
         """
         # 启动系统托盘图标（后台线程）
         self._tray.start()
+        self._floating.start()
 
         log.info("")
         log.info("🎤 Vox AI Input 已启动！")
@@ -175,6 +195,10 @@ class AIInputApp:
         log.info("录音中按 Esc 可取消当前录音")
         log.info("按 Ctrl+C 或通过托盘菜单退出程序")
         log.info("")
+
+        if open_settings:
+            log.info("启动参数要求打开设置窗口...")
+            threading.Timer(0.6, self._open_settings).start()
 
         # 首次启动（API key 未配置）→ 自动打开设置窗口
         import builtins
@@ -222,6 +246,7 @@ class AIInputApp:
         log.info("")
         log.info("程序正在退出...")
         self._hotkey_listener.stop()
+        self._floating.stop()
         self._tray.stop()
         self._shutdown_event.set()  # 通知主线程退出
         log.info("再见！")
@@ -233,19 +258,60 @@ class AIInputApp:
         在热键监听线程中调用。
         流式模式下同时启动转写会话和预览浮窗。
         """
+        self._start_recording(source="hotkey")
+
+    def _on_hotkey_release(self):
+        """
+        热键松开回调 — 停止录音并启动后台处理。
+
+        在热键监听线程中调用。
+        """
+        self._stop_recording(source="hotkey")
+
+    def _on_floating_toggle(self):
+        """悬浮按钮点击回调 — 空闲时开始，录音时停止。"""
+        if self._recorder.is_recording:
+            self._stop_recording(source="floating")
+            return
+        self._start_recording(source="floating")
+
+    def _set_activity_state(self, state, message=None):
+        """同步托盘和悬浮按钮状态。"""
+        self._tray.set_state(state)
+        if hasattr(self, "_floating") and self._floating:
+            self._floating.set_state(state, message=message)
+
+    def _on_floating_position(self, x, y):
+        """保存悬浮按钮拖动后的位置。"""
+        try:
+            floating = self._config.setdefault("ui", {}).setdefault("floating_control", {})
+            floating["x"] = int(x)
+            floating["y"] = int(y)
+            save_config(self._config)
+        except Exception as e:
+            log.debug("保存悬浮按钮位置失败: %s", e)
+
+    def _start_recording(self, source="hotkey"):
+        """统一入口：开始录音。"""
+        if self._recorder.is_recording:
+            log.debug("录音已经在进行中，忽略重复开始请求: %s", source)
+            return
+
         # 如果正在处理上一条语音，跳过（加锁读取，避免竞态）
         with self._processing_lock:
             if self._is_processing:
                 log.warning("上一条语音还在处理中，请稍候...")
+                self._set_activity_state(STATE_PROCESSING)
                 return
 
         # 检查转写器是否就绪（首次启动未配置 / 初始化失败时为 None）
         if not self._transcriber:
             log.warning("转写器未就绪，请先在设置中配置转写引擎")
+            self._set_activity_state(STATE_IDLE, message="未就绪")
             return
 
-        # 更新托盘状态为录音中
-        self._tray.set_state(STATE_RECORDING)
+        # 更新托盘和悬浮按钮状态为录音中
+        self._set_activity_state(STATE_RECORDING)
 
         # 播放开始提示音
         play_start_sound()
@@ -265,28 +331,32 @@ class AIInputApp:
         ):
             # 录音启动失败，恢复空闲状态
             log.error("录音启动失败，请检查麦克风")
-            self._tray.set_state(STATE_IDLE)
+            self._set_activity_state(STATE_IDLE, message="启动失败")
             self._preview.dismiss()
 
-    def _on_hotkey_release(self):
-        """
-        热键松开回调 — 停止录音并启动后台处理。
-
-        在热键监听线程中调用。
-        流式模式：停止转写会话 → 取最终结果 → 润色 → 粘贴
-        非流式模式：停录音 → 显示浮窗 → 转写 → 润色 → 粘贴
-        """
+    def _stop_recording(self, source="hotkey"):
+        """统一入口：停止录音并进入后台处理。"""
         if not self._recorder.is_recording:
             return
 
         # 先停止录音（释放 sounddevice 设备）
         wav_path = self._recorder.stop()
+        self._finish_recording(wav_path, source=source)
 
+    def _finish_recording(self, wav_path, source="hotkey"):
+        """
+        录音停止后的统一收口路径。
+
+        流式模式：停止转写会话 → 取最终结果 → 润色 → 粘贴。
+        非流式模式：显示浮窗 → 转写 → 润色 → 粘贴。
+        """
         # 关闭倒计时浮窗
         self._countdown.dismiss()
 
         # 再播放结束提示音（此时设备已释放，避免冲突）
         play_stop_sound()
+
+        self._set_activity_state(STATE_PROCESSING)
 
         if self._is_streaming_mode and self._streaming_transcriber:
             # ===== 流式模式 =====
@@ -296,7 +366,7 @@ class AIInputApp:
             if not final_streaming_text:
                 log.warning("流式转写结果为空，跳过")
                 self._preview.dismiss()
-                self._tray.set_state(STATE_IDLE)
+                self._set_activity_state(STATE_IDLE)
                 if wav_path:
                     cleanup_audio(wav_path)
                 return
@@ -313,7 +383,7 @@ class AIInputApp:
             # ===== 非流式模式 =====
             if not wav_path:
                 log.warning("没有有效的录音数据")
-                self._tray.set_state(STATE_IDLE)
+                self._set_activity_state(STATE_IDLE)
                 return
 
             # 显示预览浮窗 — 转写中状态
@@ -337,43 +407,7 @@ class AIInputApp:
         Args:
             wav_path: 录音文件路径
         """
-        # 关闭倒计时浮窗
-        self._countdown.dismiss()
-
-        # 播放结束提示音（录音已停止，设备已释放）
-        play_stop_sound()
-
-        if self._is_streaming_mode and self._streaming_transcriber:
-            # ===== 流式模式 =====
-            final_streaming_text = self._streaming_transcriber.stop_session()
-
-            if not final_streaming_text:
-                log.warning("流式转写结果为空，跳过")
-                self._preview.dismiss()
-                self._tray.set_state(STATE_IDLE)
-                if wav_path:
-                    cleanup_audio(wav_path)
-                return
-
-            thread = threading.Thread(
-                target=self._process_streaming_result,
-                args=(final_streaming_text, wav_path),
-                daemon=True,
-            )
-            thread.start()
-
-        else:
-            # ===== 非流式模式 =====
-            # 显示预览浮窗 — 转写中状态
-            self._preview.show(text="", status="📡 转写中...")
-
-            # 启动后台线程处理
-            thread = threading.Thread(
-                target=self._process_audio,
-                args=(wav_path,),
-                daemon=True,
-            )
-            thread.start()
+        self._finish_recording(wav_path, source="auto_stop")
 
     def _on_cancel(self):
         """
@@ -382,6 +416,10 @@ class AIInputApp:
         丢弃当前录音数据，恢复空闲状态。
         在热键监听线程中调用。
         """
+        self._cancel_recording()
+
+    def _cancel_recording(self):
+        """统一入口：取消录音并丢弃当前音频。"""
         if not self._recorder.is_recording:
             return
 
@@ -406,7 +444,7 @@ class AIInputApp:
             cleanup_audio(wav_path)
 
         # 恢复空闲状态
-        self._tray.set_state(STATE_IDLE)
+        self._set_activity_state(STATE_IDLE, message="已取消")
         log.info("🚫 录音已取消")
 
     def _on_countdown_start(self, seconds):
@@ -438,7 +476,7 @@ class AIInputApp:
                 return
             self._is_processing = True
 
-        self._tray.set_state(STATE_PROCESSING)
+        self._set_activity_state(STATE_PROCESSING)
 
         try:
             pipeline = self._create_pipeline()
@@ -457,6 +495,8 @@ class AIInputApp:
 
             self._last_result_text = result.final_text
             self._last_result_duration = result.duration
+            if getattr(result, "polish_fallback", False):
+                self._preview.update_text(result.final_text, status="⚠️ 润色失败，已使用原文")
 
             # 让用户看到结果后关闭浮窗
             time.sleep(1.0)
@@ -472,7 +512,7 @@ class AIInputApp:
             with self._processing_lock:
                 self._is_processing = False
             # 处理完毕，恢复空闲状态
-            self._tray.set_state(STATE_IDLE)
+            self._set_activity_state(STATE_IDLE)
 
     # ==================== 流式转写 ====================
 
@@ -505,7 +545,7 @@ class AIInputApp:
                 return
             self._is_processing = True
 
-        self._tray.set_state(STATE_PROCESSING)
+        self._set_activity_state(STATE_PROCESSING)
 
         try:
             pipeline = self._create_pipeline()
@@ -524,6 +564,8 @@ class AIInputApp:
 
             self._last_result_text = result.final_text
             self._last_result_duration = result.duration
+            if getattr(result, "polish_fallback", False):
+                self._preview.update_text(result.final_text, status="⚠️ 润色失败，已使用原文")
 
             # 让用户看到结果后关闭浮窗
             time.sleep(1.0)
@@ -545,7 +587,7 @@ class AIInputApp:
                 cleanup_audio(wav_path)
             with self._processing_lock:
                 self._is_processing = False
-            self._tray.set_state(STATE_IDLE)
+            self._set_activity_state(STATE_IDLE)
 
     def _create_pipeline(self):
         """创建当前配置下的核心语音处理流水线。"""
@@ -754,6 +796,7 @@ class AIInputApp:
             polish_cfg = get_polish_config(new_config)
             stt_cfg = get_stt_config(new_config)
             history_cfg = get_history_config(new_config)
+            ui_cfg = get_ui_config(new_config)
 
             # 4. 卸载旧的本地模型（如果有 unload 方法）
             if hasattr(self._transcriber, 'unload'):
@@ -799,7 +842,21 @@ class AIInputApp:
             # 9. 更新历史记录配置
             self._history_store = HistoryStore.from_config(history_cfg)
 
-            # 10. 热键变更时重建监听器
+            # 10. 更新托盘菜单语言
+            if hasattr(self._tray, "set_language"):
+                self._tray.set_language(ui_cfg["language"])
+
+            # 11. 更新悬浮按钮显示、主题、语言和位置
+            floating_cfg = get_floating_control_config(new_config)
+            self._floating.configure(
+                enabled=floating_cfg["enabled"],
+                x=floating_cfg["x"],
+                y=floating_cfg["y"],
+                theme=ui_cfg["theme"],
+                language=ui_cfg["language"],
+            )
+
+            # 12. 热键变更时重建监听器
             hotkey_cfg = get_hotkey_config(new_config)
             old_hotkey = get_hotkey_config(self._config).get("combination", "")
             new_hotkey = hotkey_cfg.get("combination", "")
@@ -823,7 +880,7 @@ class AIInputApp:
                 except Exception as e:
                     log.error("重启热键监听器失败: %s", e)
 
-            # 11. 更新内部配置引用
+            # 13. 更新内部配置引用
             self._config = new_config
 
             log.info("配置已热重载完成")

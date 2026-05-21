@@ -18,6 +18,8 @@ from src.config import (
     get_recording_config,
     get_hotkey_config,
     get_polish_config,
+    get_ui_config,
+    get_floating_control_config,
 )
 
 
@@ -140,6 +142,49 @@ class TestGetHistoryConfig:
         assert result["enabled"] is False
         assert result["max_entries"] == 25
         assert result["path"] == "custom-history.jsonl"
+
+
+class TestGetUIConfig:
+    """界面偏好配置提取测试。"""
+
+    def test_defaults(self):
+        result = get_ui_config({})
+        assert result["language"] == "zh-CN"
+        assert result["theme"] == "dark"
+
+    def test_extracts_and_normalizes_values(self):
+        result = get_ui_config({"ui": {"language": "en-US", "theme": "LIGHT"}})
+        assert result["language"] == "en"
+        assert result["theme"] == "light"
+
+    def test_invalid_theme_falls_back_to_dark(self):
+        result = get_ui_config({"ui": {"language": "zh", "theme": "purple"}})
+        assert result["language"] == "zh-CN"
+        assert result["theme"] == "dark"
+
+
+class TestGetFloatingControlConfig:
+    """悬浮录音按钮配置提取测试。"""
+
+    def test_defaults(self):
+        result = get_floating_control_config({})
+        assert result["enabled"] is True
+        assert result["x"] is None
+        assert result["y"] is None
+
+    def test_extracts_values(self):
+        result = get_floating_control_config({
+            "ui": {
+                "floating_control": {
+                    "enabled": False,
+                    "x": "120",
+                    "y": 240,
+                }
+            }
+        })
+        assert result["enabled"] is False
+        assert result["x"] == 120
+        assert result["y"] == 240
 
 
 class TestGetLLMProfileConfig:
@@ -322,6 +367,26 @@ class TestSaveConfig:
                     "endpoint": "https://api.example.com/v1",
                     "api_key": "key",
                     "model": "model-a",
+                }
+            },
+        }
+        config_file = tmp_path / "config.yaml"
+
+        with patch("src.config.CONFIG_PATH", config_file):
+            result = save_config(config)
+
+        assert result is True
+
+    def test_saves_openai_responses_llm_profile(self, tmp_path):
+        """Responses API 类型也应作为合法 profile 保存。"""
+        config = {
+            "polish": {"enabled": True, "profile": "default"},
+            "llm_profiles": {
+                "default": {
+                    "provider": "openai_responses",
+                    "endpoint": "https://api.example.com/v1",
+                    "api_key": "key",
+                    "model": "gpt-5.4-mini",
                 }
             },
         }

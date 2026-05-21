@@ -14,6 +14,7 @@ PIL 和 pystray 均延迟导入，缺少时只降级（不显示图标），不�
 
 import threading
 
+from src.i18n import normalize_ui_language, t
 from src.logger import setup_logger
 
 log = setup_logger(__name__)
@@ -177,7 +178,15 @@ class TrayIcon:
     如果 Pillow 或 pystray 未安装，所有方法静默降级为空操作。
     """
 
-    def __init__(self, on_quit=None, on_settings=None, on_history=None, on_log=None, on_update=None):
+    def __init__(
+        self,
+        on_quit=None,
+        on_settings=None,
+        on_history=None,
+        on_log=None,
+        on_update=None,
+        language=None,
+    ):
         """
         初始化托盘图标。
 
@@ -193,6 +202,7 @@ class TrayIcon:
         self._on_history = on_history
         self._on_log = on_log
         self._on_update = on_update
+        self._language = normalize_ui_language(language)
         self._icon = None
         self._thread = None
         self._current_state = STATE_IDLE
@@ -212,6 +222,57 @@ class TrayIcon:
             log.warning("生成托盘图标失败: %s（不影响核心功能）", e)
             self._available = False
 
+    def _state_title(self, state):
+        return t(_STATE_CONFIG[state]["title"], self._language)
+
+    def _build_menu(self):
+        import pystray
+
+        from run import __version__
+
+        return pystray.Menu(
+            pystray.MenuItem(
+                f"v{__version__}",
+                None,
+                enabled=False,
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                t("设置", self._language),
+                self._handle_settings,
+            ),
+            pystray.MenuItem(
+                t("历史记录", self._language),
+                self._handle_history,
+            ),
+            pystray.MenuItem(
+                t("日志", self._language),
+                self._handle_log,
+            ),
+            pystray.MenuItem(
+                t("检查更新", self._language),
+                self._handle_update,
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                t("退出", self._language),
+                self._handle_quit,
+            ),
+        )
+
+    def set_language(self, language):
+        """Update tray title/menu language when UI preferences change."""
+        self._language = normalize_ui_language(language)
+        try:
+            if self._icon:
+                self._icon.title = self._state_title(self._current_state)
+                self._icon.menu = self._build_menu()
+                update_menu = getattr(self._icon, "update_menu", None)
+                if update_menu:
+                    update_menu()
+        except Exception as e:
+            log.warning("更新托盘菜单语言失败: %s", e)
+
     def start(self):
         """
         在后台线程中启动托盘图标。
@@ -224,42 +285,12 @@ class TrayIcon:
         try:
             import pystray
 
-            from run import __version__
-
-            menu = pystray.Menu(
-                pystray.MenuItem(
-                    f"v{__version__}",
-                    None,
-                    enabled=False,
-                ),
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem(
-                    "设置",
-                    self._handle_settings,
-                ),
-                pystray.MenuItem(
-                    "历史记录",
-                    self._handle_history,
-                ),
-                pystray.MenuItem(
-                    "日志",
-                    self._handle_log,
-                ),
-                pystray.MenuItem(
-                    "检查更新",
-                    self._handle_update,
-                ),
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem(
-                    "退出",
-                    self._handle_quit,
-                ),
-            )
+            menu = self._build_menu()
 
             self._icon = pystray.Icon(
                 name="vox_ai_input",
                 icon=self._icon_cache[STATE_IDLE],
-                title=_STATE_CONFIG[STATE_IDLE]["title"],
+                title=self._state_title(STATE_IDLE),
                 menu=menu,
             )
 
@@ -303,7 +334,7 @@ class TrayIcon:
         try:
             if self._icon:
                 self._icon.icon = self._icon_cache.get(state)
-                self._icon.title = _STATE_CONFIG[state]["title"]
+                self._icon.title = self._state_title(state)
         except Exception as e:
             # 托盘更新失败不应影响核心功能
             log.warning("更新托盘图标失败: %s", e)

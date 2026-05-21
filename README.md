@@ -8,7 +8,7 @@
 
 Supports mixed Chinese-English recognition, spoken symbol conversion (e.g., "at sign" → @), AI-powered punctuation and grammar correction, and optional real-time translation to 9 languages.
 
-> **v0.0.7: Local-first refactor + cleaner settings!** Online transcription has been removed, local transcription is now the core path, and polishing supports Azure OpenAI, OpenAI-compatible APIs, and Anthropic through a simplified endpoint/key/model setup.
+> **v0.0.8: Floating mic + stronger polishing!** Adds a draggable recording control, Chinese/English UI, dark/light theme toggle, selectable polishing API types including OpenAI Responses, and a much stronger default speech cleanup prompt.
 
 ## Features
 
@@ -18,8 +18,9 @@ Supports mixed Chinese-English recognition, spoken symbol conversion (e.g., "at 
   - Whisper Small (99 languages, ~610MB)
   - Paraformer Streaming (Chinese-English real-time transcription)
   - One-click model download in settings
-- **AI smart polishing** — Auto-fix punctuation, grammar, remove filler words
-- **Multiple polishing API endpoints** — Supports Azure OpenAI, OpenAI-compatible APIs, and Anthropic with automatic API detection
+- **AI smart polishing** — Auto-fix punctuation, remove filler words, split paragraphs, and turn spoken lists into clean numbered items
+- **Multiple polishing API endpoints** — Supports OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, and OpenAI-compatible gateways
+- **Floating recording control** — A draggable always-on-top mic button can start/stop recording and mirrors hotkey/tray status
 - **History** — Save recent outputs, review them in settings, and copy them again
 - **Mixed language recognition** — Accurately handles Chinese-English mixed speech
 - **Symbol dictation** — Say "at sign" to output @, "hash" to output #
@@ -27,7 +28,7 @@ Supports mixed Chinese-English recognition, spoken symbol conversion (e.g., "at 
 - **Advanced prompt override** — Optional, collapsed by default for safer polishing behavior
 - **Recording countdown** — Semi-transparent countdown overlay near max duration
 - **Live log window** — Dark-themed scrolling log for troubleshooting
-- **Modern settings UI** — Cleaner left navigation, focused pages, dark/light theme toggle
+- **Modern settings UI** — Cleaner left navigation, focused pages, Chinese/English UI, and dark/light theme toggle
 - **App icon** — Fluent-style blue-purple gradient microphone
 - **Hotkey hot-reload** — Changes take effect immediately, no restart needed
 - **System tray** — Gradient microphone icon with status colors
@@ -86,8 +87,11 @@ python run.py
 |--------|-------------|
 | **Hold hotkey** | Start recording (tray icon turns red) |
 | **Release hotkey** | Stop recording → transcribe → polish → paste |
+| **Click floating mic** | Start/stop recording, synced with hotkey status |
+| **Drag floating mic** | Move it; position is saved automatically |
 | **Press Esc while recording** | Cancel current recording |
 | **Tray right-click → Settings** | Open settings window |
+| **Settings top right → Interface/Theme/Info** | Switch UI language, toggle theme, and view app info |
 | **Tray right-click → Log** | Open live log window |
 | **Tray right-click → Check Updates** | Check for new GitHub releases |
 
@@ -119,6 +123,7 @@ Speech is automatically polished + translated in a single API call.
 | `python run.py` | Normal mode (tray) |
 | `python run.py --test` | Test mode (press Enter to control recording) |
 | `python run.py --visible` | Normal mode + keep console (for debugging) |
+| `python run.py --open-settings` | Start the app and open Settings immediately |
 | `python run.py --version` | Show version |
 
 ## Configuration
@@ -127,25 +132,30 @@ Edit `config.yaml` (or configure via the settings window on first launch):
 
 | Key | Description | Default |
 |-----|-------------|---------|
+| `ui.language` | Settings/tray UI language: `zh-CN` / `en` | `zh-CN` |
+| `ui.theme` | Settings color theme: `dark` / `light` | `dark` |
+| `ui.floating_control.enabled` | Show the draggable floating mic button | `true` |
 | `stt.backend` | Transcription engine, fixed to local offline | `local` |
 | `stt.model_type` | Local model: `sense_voice`, `whisper_small`, or `paraformer_streaming` | `sense_voice` |
 | `recording.sample_rate` | Sample rate (Hz) | `16000` |
 | `recording.channels` | Audio channels | `1` |
 | `recording.max_duration` | Max recording duration (seconds) | `60` |
-| `hotkey.combination` | Recording hotkey | `alt+z` |
+| `hotkey.combination` | Recording hotkey | `ctrl+shift+space` |
 | `polish.enabled` | Enable AI polishing | `false` |
 | `polish.profile` | LLM profile used for polishing | `default` |
 | `polish.translate_to` | Translation target language code (empty = none) | `""` |
 | `polish.show_original` | When translating, also output the polished source text | `false` |
+| `llm_profiles.default.provider` | API type: `auto`, `openai_compatible`, `openai_responses`, or `anthropic` | `auto` |
 | `llm_profiles.default.endpoint` | Polishing API endpoint | `""` |
+| `llm_profiles.default.base_url` | Optional resolved runtime API base, usually auto-filled from endpoint | unset |
 | `llm_profiles.default.api_key` | Polishing API key | `""` |
-| `llm_profiles.default.model` | Model name; Azure uses deployment name here | `""` |
+| `llm_profiles.default.model` | Model name | `""` |
 | `history.enabled` | Save recent output history | `true` |
 | `history.max_entries` | Maximum retained history entries | `100` |
 
 ### Polishing API Setup
 
-In Settings, the Polishing page only asks for Endpoint, API Key, and Model. "Validate and detect" tries OpenAI-compatible, Azure OpenAI, and Anthropic automatically; "Fetch models" tries to load model/deployment names from the endpoint. You can also edit YAML directly:
+In Settings, the Polishing page asks for API Type, Endpoint, API Key, and Model. Use `OpenAI Chat Completions` for `/v1/chat/completions`, `OpenAI Responses` for `/v1/responses`, or `Anthropic Messages` for `/v1/messages`; `Auto Detect` is still available. "Fetch models" tries to load model names from the endpoint and can resolve a missing `/v1` in the background. The UI keeps the endpoint you typed; the resolved API base is saved as `base_url` and used at runtime. You can also edit YAML directly:
 
 ```yaml
 polish:
@@ -154,10 +164,11 @@ polish:
 
 llm_profiles:
   default:
-    provider: "auto"
-    endpoint: "https://api.deepseek.com/v1"
+    provider: "openai_responses"
+    endpoint: "https://api.openai.com"
+    base_url: "https://api.openai.com/v1"
     api_key: "sk-..."
-    model: "deepseek-chat"
+    model: "gpt-5.4-mini"
 ```
 
 ## Project Structure
@@ -183,7 +194,9 @@ vox-ai-input/
 │   ├── hotkey.py           # Global hotkey listener
 │   ├── output.py           # Clipboard + simulated paste
 │   ├── tray.py             # System tray (gradient microphone icon)
-│   ├── settings_window.py  # Dark-themed settings window
+│   ├── floating_control.py # Draggable on-screen recording button
+│   ├── i18n.py             # Lightweight Chinese/English UI strings
+│   ├── settings_window.py  # Settings window with dark/light themes
 │   ├── log_window.py       # Live log viewer
 │   ├── countdown.py        # Recording countdown overlay (Win32 Layered Window)
 │   ├── updater.py          # GitHub version check & update
@@ -193,7 +206,7 @@ vox-ai-input/
 │   ├── paths.py            # Path utilities (compatible with packaged/source modes)
 │   ├── interfaces.py       # Protocol interface definitions
 │   └── logger.py           # Unified logging (UTF-8 safe)
-├── tests/                  # 120+ test cases
+├── tests/                  # 170+ test cases
 ├── models/                 # Local STT models (user downloads on demand, not in git)
 ├── assets/sounds/          # Recording notification sounds
 ├── scripts/                # Build helper scripts
@@ -242,7 +255,7 @@ pyinstaller build.spec --clean --noconfirm
 - **Text polishing + translation**: Azure OpenAI / OpenAI-compatible / Anthropic
 - **Hotkey listener**: pynput
 - **Recording**: sounddevice + soundfile
-- **UI**: tkinter (dark-themed settings + log windows) + pystray (system tray)
+- **UI**: tkinter (settings, log window, floating control) + pystray (system tray)
 - **Countdown overlay**: Win32 Layered Window (per-pixel alpha transparency)
 - **Packaging**: PyInstaller (--onedir) + Inno Setup (installer)
 - **CI/CD**: GitHub Actions

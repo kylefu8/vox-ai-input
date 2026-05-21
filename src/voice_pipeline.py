@@ -32,6 +32,8 @@ class VoicePipelineResult:
     duration: float
     api_calls: int = 0
     history_id: str | None = None
+    polish_fallback: bool = False
+    polish_error: str | None = None
 
 
 class VoicePipeline:
@@ -85,7 +87,7 @@ class VoicePipeline:
         if on_raw_text:
             on_raw_text(raw_text)
 
-        final_text, polish_calls = self._polish(raw_text, fallback_to_raw=False)
+        final_text, polish_calls, polish_fallback, polish_error = self._polish(raw_text, fallback_to_raw=False)
         api_calls += polish_calls
         if not final_text:
             log.warning("润色结果为空，跳过")
@@ -93,8 +95,19 @@ class VoicePipeline:
 
         if polish_calls:
             log.info("⏱️  润色耗时: %.1f 秒", time.monotonic() - t2)
+        if polish_fallback:
+            log.warning("AI 润色失败，已使用原始转写文字")
 
-        return self._finish(raw_text, final_text, started_at, api_calls, on_final_text, source="audio")
+        return self._finish(
+            raw_text,
+            final_text,
+            started_at,
+            api_calls,
+            on_final_text,
+            source="audio",
+            polish_fallback=polish_fallback,
+            polish_error=polish_error,
+        )
 
     def process_text(
         self,
@@ -114,24 +127,37 @@ class VoicePipeline:
             on_raw_text(raw_text)
 
         t1 = time.monotonic()
-        final_text, api_calls = self._polish(raw_text, fallback_to_raw=True)
+        final_text, api_calls, polish_fallback, polish_error = self._polish(raw_text, fallback_to_raw=True)
         if api_calls:
             log.info("⏱️  润色耗时: %.1f 秒", time.monotonic() - t1)
+        if polish_fallback:
+            log.warning("AI 润色失败，已使用原始流式文字")
 
         if not final_text:
             log.warning("润色结果为空，降级使用原始文字")
             final_text = raw_text
 
-        return self._finish(raw_text, final_text, started_at, api_calls, on_final_text, source="streaming")
+        return self._finish(
+            raw_text,
+            final_text,
+            started_at,
+            api_calls,
+            on_final_text,
+            source="streaming",
+            polish_fallback=polish_fallback,
+            polish_error=polish_error,
+        )
 
-    def _polish(self, raw_text: str, fallback_to_raw: bool) -> tuple[str | None, int]:
+    def _polish(self, raw_text: str, fallback_to_raw: bool) -> tuple[str | None, int, bool, str | None]:
         if not (self.polisher and self.polish_enabled):
-            return raw_text, 0
+            return raw_text, 0, False, None
 
         final_text = self.polisher.polish(raw_text)
+        polish_fallback = bool(getattr(self.polisher, "last_fallback_to_raw", False))
+        polish_error = getattr(self.polisher, "last_error", "") or None
         if not final_text and fallback_to_raw:
-            return raw_text, 1
-        return final_text, 1
+            return raw_text, 1, True, polish_error or "empty_result"
+        return final_text, 1, polish_fallback, polish_error
 
     def _finish(
         self,
@@ -141,6 +167,8 @@ class VoicePipeline:
         api_calls: int,
         on_final_text: TextCallback | None,
         source: str,
+        polish_fallback: bool = False,
+        polish_error: str | None = None,
     ) -> VoicePipelineResult:
         if on_final_text:
             on_final_text(final_text)
@@ -149,13 +177,23 @@ class VoicePipeline:
         self.paste_func(final_text)
 
         duration = time.monotonic() - started_at
-        history_id = self._save_history(raw_text, final_text, duration, api_calls, source)
+        history_id = self._save_history(
+            raw_text,
+            final_text,
+            duration,
+            api_calls,
+            source,
+            polish_fallback=polish_fallback,
+            polish_error=polish_error,
+        )
         return VoicePipelineResult(
             raw_text=raw_text,
             final_text=final_text,
             duration=duration,
             api_calls=api_calls,
             history_id=history_id,
+            polish_fallback=polish_fallback,
+            polish_error=polish_error,
         )
 
     def _save_history(
@@ -165,17 +203,24 @@ class VoicePipeline:
         duration: float,
         api_calls: int,
         source: str,
+        polish_fallback: bool = False,
+        polish_error: str | None = None,
     ) -> str | None:
         if not self.history_store:
             return None
         try:
+            metadata = dict(self.history_metadata)
+            if polish_fallback:
+                metadata["polish_fallback"] = True
+                if polish_error:
+                    metadata["polish_error"] = polish_error[:300]
             entry = self.history_store.append(
                 raw_text=raw_text,
                 final_text=final_text,
                 duration=duration,
                 api_calls=api_calls,
                 source=source,
-                metadata=self.history_metadata,
+                metadata=metadata,
             )
             return getattr(entry, "id", None)
         except Exception as e:

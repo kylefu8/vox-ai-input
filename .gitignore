@@ -32,6 +32,11 @@ nul
 *.tmp
 *.log
 
+# ========== 本地运行数据 / 评测输出 ==========
+data/
+eval/results/
+eval/reports/
+
 # ========== 构建产物 ==========
 release/
 

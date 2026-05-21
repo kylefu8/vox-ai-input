@@ -5,8 +5,12 @@
 import pytest
 
 from src.settings_window import (
+    _button_width,
     _default_llm_profile,
+    _icon_text,
+    _hotkey_warning_text,
     _normalize_llm_profile_name,
+    _normalize_hotkey_combo,
     _unique_llm_profile_name,
 )
 
@@ -47,3 +51,30 @@ def test_default_anthropic_profile():
     assert profile["provider"] == "anthropic"
     assert profile["endpoint"] == "https://api.anthropic.com"
     assert profile["model"].startswith("claude-")
+
+
+def test_default_openai_responses_profile():
+    profile = _default_llm_profile("openai_responses")
+
+    assert profile["provider"] == "openai_responses"
+    assert profile["endpoint"] == "https://api.openai.com/v1"
+    assert profile["model"]
+
+
+def test_button_width_expands_for_english_labels():
+    assert _button_width("Download", 4) >= 9
+    assert _button_width("下载", 4) >= 5
+    assert _button_width("🗑️", 3) == 3
+
+
+def test_icon_text_keeps_command_label_for_image_icon_buttons():
+    assert _icon_text("save", "Save") == "Save"
+
+
+def test_hotkey_warning_flags_alt_z():
+    assert _normalize_hotkey_combo(" Alt + Z ") == "alt+z"
+    assert "Alt+Z" in _hotkey_warning_text("alt+z")
+
+
+def test_hotkey_warning_allows_recommended_default():
+    assert _hotkey_warning_text("ctrl+shift+space") == ""

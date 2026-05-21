@@ -49,3 +49,131 @@
 - 新增 `_release_note_v0.0.7.md`，记录本地优先重构、润色 API 简化、设置 UI 重做和清理项。
 - README / README_zh 顶部版本摘要更新为 v0.0.7，并同步当前本地转写、多 endpoint 润色和设置瘦身说明。
 - 发布前全量测试通过：`143 passed in 16.85s`。
+- 继续新增多语言与界面偏好：添加 `src/i18n.py`，设置窗口支持中文/英文界面切换，托盘菜单可随 UI 语言更新。
+- 设置窗口右上角新增界面语言选择、深浅色主题按钮和“关于”软件说明弹窗；主题与弹窗均跟随当前配色。
+- 配置新增 `ui.language` / `ui.theme`，设置保存时持久化界面语言和配色。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 目标测试通过：`37 passed in 0.45s`。
+- 相关回归通过：`69 passed in 16.16s`。
+- 设置窗口烟测通过：英文/浅色配置可打开，Info 弹窗可构建，主题切换可重建。
+- 全量测试通过：`150 passed in 17.38s`。
+- 根据用户反馈修复英文 UI 截断：按钮宽度改为按文本长度自动扩展，覆盖 `Download`、`Fetch`、`Clear` 等英文按钮。
+- 设置页文案瘦身：去掉顶部重复说明、页面副标题、多处重复分区说明和 LLM 详细提示；模型卡片改用更短的中英文显示名/说明。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 目标测试通过：`38 passed in 0.57s`。
+- 英文设置窗口按钮宽度烟测通过：`button width ok`。
+- 全量测试通过：`151 passed in 20.75s`。
+- 根据用户反馈继续图标化按钮：顶部主题/Info、模型下载/删除、历史刷新/复制/清空、Prompt 展开改为纯图标按钮并加 tooltip。
+- 保存、取消、录制、验证和获取模型保留文字，同时添加前置图标以增强可扫性。
+- 新增轻量 tooltip 辅助和图标按钮 helper。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 目标测试通过：`39 passed in 0.30s`。
+- 英文设置窗口图标按钮烟测通过：`icon smoke ok count=9 bad=[]`。
+- 全量测试通过：`152 passed in 18.49s`。
+- 按用户反馈将符号图标替换为 emoji 图标，纯图标按钮使用 `Segoe UI Emoji` 字体。
+- 调整按钮宽度估算，忽略 emoji 变体选择符，避免按钮被无意义撑宽。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 目标测试通过：`39 passed in 0.33s`。
+- Emoji 设置窗口烟测通过：`emoji smoke ok count=9 bad=[]`。
+- 全量测试通过：`152 passed in 18.41s`。
+- 根据用户反馈，确认 Windows/Tk 会把文本 emoji 渲染成黑白或不同样式；改为运行时用 Pillow 绘制彩色位图按钮图标。
+- 文字按钮不再拼接 emoji 字符，而是使用图片图标 + 文字，避免字体回退导致视觉不一致。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 目标测试通过：`39 passed in 0.45s`。
+- 位图图标窗口烟测通过：`bitmap icon smoke ok images=14 bad=[]`。
+- 全量测试通过：`152 passed in 17.32s`。
+- 修复设置窗口实际打开失败：`ImageTk.PhotoImage` 现在显式绑定当前 Tk root，避免多线程下 `image "pyimage..." doesn't exist`。
+- 修复托盘启动失败：创建 `pystray.Icon` 的作用域内重新导入 `pystray`。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 目标测试通过：`39 passed in 0.67s`。
+- 位图图标窗口烟测通过：`bitmap icon smoke ok images=14 bad=[]`。
+- 全量测试通过：`152 passed in 16.88s`。
+- 根据用户反馈“朦胧感又回来”和设置页可见渲染过程，确认临时 `python -c` 启动方式绕过了 `run.py` 的 Windows DPI awareness。
+- 新增正式启动参数 `python run.py --open-settings` / `--settings`，并让 `AIInputApp.run(open_settings=True)` 启动后自动打开设置窗口。
+- 设置窗口优化：打开前预热彩色位图图标；主题/语言切换重建时先隐藏窗口，重建完成后再显示；历史记录列表改为进入“数据/历史”页后懒加载。
+- 同步修复窗口图标 `ImageTk.PhotoImage` 的 `master=window` 绑定，降低多线程 Tk 图片句柄风险。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 目标测试通过：`39 passed in 0.42s`。
+- 设置窗口烟测通过：`settings smoke ok`。
+- 全量测试通过：`152 passed in 15.00s`。
+- 已停止旧的临时 `python -c` 启动进程，并用 venv 执行 `python run.py --open-settings` 重启；launcher PID 57548，实际 Python 子进程 PID 3076。
+- 通过 Win32 窗口枚举确认设置窗口已显示，标题为 `Vox AI Input`。
+- 根据用户反馈“颜色切换像整个窗口重新打开”，将主题切换改为原窗口内递归替换主题色并刷新按钮图标，不再销毁/重建设置窗口。
+- 修复 Info、消息、下载、删除确认等 Tk 弹窗先在左上角闪现的问题：新弹窗创建后先隐藏，定位到父窗口中心后再显示。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 设置窗口主题切换烟测通过：`theme in-place smoke ok`。
+- 目标测试通过：`39 passed in 0.37s`。
+- 全量测试通过：`152 passed in 16.52s`。
+- 已重启新版应用；launcher PID 41892，实际 Python 子进程 PID 28532。
+- 通过 Win32 窗口枚举确认设置窗口已显示，标题为 `Vox AI Input`。
+- 根据用户反馈“保存和取消按钮显示不完整”，定位到 Tk 图文按钮在部分 Windows/Tk 组合下会把 `width` 当作像素宽度，导致 `image + text` 内容被裁切。
+- 将图文按钮改为自然宽度，纯图标按钮继续使用固定尺寸。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 保存/取消按钮宽度烟测通过：`button width smoke ok`。
+- 相关测试通过：`11 passed in 0.24s`。
+- 全量测试通过：`152 passed in 16.86s`。
+- 已重启新版应用；launcher PID 63600，实际 Python 子进程 PID 49584。
+- 根据用户反馈“深色界面太深，看着费眼睛”，将 dark palette 从接近黑色调整为更柔和的 charcoal 色系：整体背景抬亮，卡片、侧栏、输入框和边框层级更清楚。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 深色主题烟测通过：`softer dark theme smoke ok`。
+- 相关测试通过：`11 passed in 0.19s`。
+- 全量测试通过：`152 passed in 18.90s`。
+- 已重启新版应用；launcher PID 30940，实际 Python 子进程 PID 46636。
+- 排查用户反馈的 `https://llm.haph.fun/` provider 报错：根路径返回 `{"status":"bad"}`，真正 OpenAI-compatible base 是 `https://llm.haph.fun/v1`。
+- 使用当前 API key 测试：`/v1/models` 可返回模型列表且包含 `claude-sonnet-4.6`，但实际调用 `claude-sonnet-4.6` 和 `claude-haiku-4.5` 均返回 503 `model_not_found`，消息为“分组 svip 下模型 ... 无可用渠道（distributor）”；`gpt-4o-mini` 可正常返回 `OK`。
+- 调整 LLM 探测：用户输入根 URL 时优先尝试 `/v1`；普通自定义域名不再硬试 Azure；OpenAI-compatible 模型列表一旦成功就不继续混入 Azure/Anthropic 的无关错误。
+- 新增/更新 LLM client 单元测试；LLM 测试通过：`13 passed in 1.67s`。
+- 全量测试通过：`153 passed in 15.91s`。
+- 已重启新版应用；launcher PID 57840，实际 Python 子进程 PID 39796。
+- 根据用户反馈“自动识别会把同一 provider 固定成 Chat Completions，导致 Responses-only 新模型失败”，新增 `openai_responses` LLM client，调用 `/v1/responses` 并解析 `output_text` / output content blocks。
+- 设置窗口润色 API 增加“API 类型”下拉框：自动识别、OpenAI Chat Completions、OpenAI Responses、Anthropic Messages。显式选择后验证只验证该协议，不再回退或改写为其他协议。
+- 配置校验、README / README_zh、config.example.yaml 已同步 `openai_responses`。
+- `llm.haph.fun` 真实测试：`gpt-4o-mini` 选择 Chat Completions 成功；选择 Responses 返回 provider 明确错误 “Supported backend(s): /chat/completions”，证明下拉选择能区分协议。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 相关测试通过：`58 passed in 6.30s`；设置窗口 API 类型烟测通过：`settings api type smoke ok`。
+- 全量测试通过：`159 passed in 20.49s`。
+- 已重启新版应用；launcher PID 4316，实际 Python 子进程 PID 54048。
+- 根据用户反馈调整润色 API 操作顺序：将“获取模型”放在“验证并识别”左侧，符合先拉模型、再验证所选模型的流程。
+- 支持 endpoint 省略 `/v1`：验证/获取模型会记录后台解析出的实际 `base_url`，运行时优先使用 `base_url`；设置窗口仍显示用户原始输入的 `endpoint`。
+- `llm.haph.fun` 真实测试：输入 `https://llm.haph.fun` 可解析并保存 `base_url=https://llm.haph.fun/v1`；显式 Chat 验证返回 `OK`。
+- 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
+- 相关测试通过：`59 passed in 2.27s`；设置窗口 endpoint/order 烟测通过：`settings endpoint order smoke ok`。
+- 全量测试通过：`160 passed in 19.14s`。
+- 已重启新版应用；launcher PID 37584，实际 Python 子进程 PID 35128。
+- 用户提出下一阶段要系统评测润色/翻译效果：覆盖润色、润色+翻译、润色+翻译+原文，输入先以中文、中英混杂为主，翻译先测中文↔英文，并对比 gpt-5.4、gpt-5.4-mini、gpt-5.5、gpt-4o、gpt-4o-mini。
+- 已确认当前润色入口在 `src/polisher.py`：默认 prompt 以“语音转写后处理器”为角色，`build_prompt()` 动态追加翻译/双输出规则；下一步计划先评测现有 prompt 与新版候选 prompt，再决定替换。
+- 根据用户要求将“自动分段、并列内容列表化、明确要求时提炼要点/待办/消息”等能力加入默认润色 prompt，同时强化术语、URL、路径、代码和模型名保护。
+- 新增 `eval/cases.yaml`，覆盖中文、英文、中英混杂、技术词、符号、数字、待办、会议要点、明确总结和短文本等评测样本；保留旧 prompt 到 `eval/prompts/baseline_old.txt` 方便 A/B。
+- 新增 `scripts/eval_polish.py`，支持 dry-run、模型/场景/样本筛选、prompt 文件覆盖、JSONL 原始结果、Markdown 摘要和静态 HTML 报告。
+- 排查 `llm.haph.fun`：系统 DNS 将域名解析到 `6.6.6.33` 并出现上海蓝云阻断页/ TLS 握手失败；DoH 正确解析为 `40.73.121.73`。使用 `https://40.73.121.73/v1` + `Host: llm.haph.fun` + 环境变量 `OPENAI_API_KEY` 可正常访问模型列表和请求接口。
+- 为评测脚本增加 direct endpoint workaround：`--host-header` 和 `--tls-no-verify`，仅用于本地评测直连，不改系统 hosts，不改应用配置。
+- 通过 `llm.haph.fun` 服务完成代表性矩阵评测：5 个模型、4 条代表样本、5 类场景，共 70 条结果；HTML 报告生成到 `eval/reports/latest.html`。
+- 已启动本地静态报告服务：`http://127.0.0.1:8765/latest.html`，并用内置浏览器确认页面打开正常，结果卡片数 70。
+- 相关测试通过：`tests/test_polisher_prompt.py tests/test_llm_clients.py` 共 `22 passed in 2.30s`。
+- 用户要求第二轮长文本评测；已补强默认 prompt：开发/配置语境下保留 endpoint、base_url、Responses API、Chat Completions、API key、模型名等英文术语；明显枚举结构优先整理成编号列表。
+- 新增 4 条长文本样本：`long_zh_product_feedback`、`long_zh_meeting_minutes`、`long_mixed_api_workflow`、`long_en_product_feedback`。
+- 使用 `llm.haph.fun` direct workaround 完成第二轮长文本矩阵：5 个模型、4 条长文本、5 类场景，共 70 条结果；报告更新为 `eval/reports/20260521-105534.html`，`latest.html` 已刷新。
+- 第二轮摘要：`gpt-5.5` 自动检查 1.000 但最慢；`gpt-5.4-mini` 0.9898 / 平均 4.9s，结构化和术语保留稳定；`gpt-4o-mini` 0.9898 / 平均 2.8s，速度最好但复杂“润色+英译”长会议文本会误保持中文；`gpt-5.4` 出现过度空行；`gpt-4o` 也在同一英译场景误保持中文且有 Markdown 风格输出。
+- 第二轮相关测试通过：`tests/test_polisher_prompt.py tests/test_llm_clients.py` 共 `22 passed in 1.99s`。
+- 根据用户要求“这些小机关要告诉用户”，在润色设置卡片中新增“语音小技巧”提示：总结成要点、整理成待办、写成消息、枚举自动列表化、技术词保留；Info 弹窗同步加入简短提示。
+- 新增相关英文 UI 翻译，并补充 i18n 测试；编译通过，`tests/test_i18n.py` 通过：`5 passed in 0.09s`。
+- 已重启新版设置窗口；launcher PID 69148，实际 Python 子进程 PID 31352。
+- 开始规划快捷键与悬浮控制重构：用户反馈 `Alt+Z` 容易和其他程序冲突，希望新增可拖动屏幕浮动图标，点击可开始/停止录音，并能同步显示快捷键触发后的状态。
+- 已盘点现有交互代码：`AIInputApp` 当前由 `_on_hotkey_press` / `_on_hotkey_release` / `_on_cancel` 驱动录音状态；`TrayIcon` 有 idle/recording/processing 三态；`PreviewOverlay` 和 `CountdownOverlay` 已采用独立线程 + queue 的浮窗模型，可作为悬浮按钮实现参考。
+- 已将任务计划新增为阶段 19：统一录音状态机，新增悬浮按钮，补充快捷键冲突提示和设置项。
+- 已实现 `src/floating_control.py`：可拖动、置顶、不抢焦点的小型悬浮录音按钮；空闲点击开始、录音中点击停止、处理中显示状态，右键在录音中取消、空闲时打开设置。
+- `AIInputApp` 已抽出统一录音入口：`_start_recording`、`_stop_recording`、`_finish_recording`、`_cancel_recording`、`_set_activity_state`；热键、悬浮按钮和自动停止路径都走同一套状态更新。
+- 配置新增 `ui.floating_control.enabled/x/y`，拖动悬浮按钮后会保存位置；设置页新增“显示悬浮录音按钮”开关和 `Alt+Z` / `Win+Space` / `Ctrl+Space` 等高风险快捷键提示。
+- `config.example.yaml` 与 README / README_zh 已把默认录音快捷键从 `alt+z` 调整为 `ctrl+shift+space`；本机 `config.yaml` 也已切到 `ctrl+shift+space` 并开启悬浮按钮。
+- 验证通过：`py -3.12 -m compileall -q run.py src tests`；目标测试 `83 passed in 17.15s`；全量测试 `174 passed in 18.02s`。
+- 已清理旧的重复 `run.py` 实例，并启动新版应用；launcher PID 9156，实际 Python 子进程 PID 53988；Win32 窗口枚举确认 `Vox Floating Control` 已显示。
+- 根据用户给出的真实例句，确认默认 prompt 过于保守：会保留 `ton尼`、`比较比较比较重`、`hand一下`、无意义“然后/呃/OK好”等转写残留。
+- 已将默认 prompt 调整为“标准语音转写后处理器”：更主动清理真实语音输入中的重复、口头禅、连接词堆叠、尾部截断片段，并增加中英混杂商务口语规则（如 `ton尼→Tony`、`hand一下→handle 一下`、`caseokok→case。OK`）。
+- 排查真实调用时发现 `llm.haph.fun` 偶发 SSL EOF，当前程序会降级返回原文；已新增 `Polisher.last_fallback_to_raw/last_error`，流水线会把润色失败写入结果和历史 metadata，预览状态会显示“润色失败，已使用原文”。
+- 验证通过：`tests/test_polisher_prompt.py tests/test_voice_pipeline.py tests/test_i18n.py` 共 `17 passed in 3.12s`；全量测试 `176 passed in 24.16s`。
+- 已重启新版应用；launcher PID 18848，实际 Python 子进程 PID 35848。
+- 发布收口：将 `run.py` 和 `installer.iss` 版本号更新为 `0.0.8`。
+- 新增 `_release_note_v0.0.8.md`，记录悬浮录音按钮、多语言/配色 UI、润色 API/Prompt 升级和模型评测建议。
+- README / README_zh 顶部版本摘要更新为 v0.0.8，并同步悬浮按钮、OpenAI Responses、`--open-settings` 和 170+ 测试说明。
+- `.gitignore` 新增本地运行数据与评测输出忽略项：`data/`、`eval/results/`、`eval/reports/`。
+- 发布前验证通过：`py -3.12 -m compileall -q run.py src tests`；全量测试 `176 passed in 24.19s`。
