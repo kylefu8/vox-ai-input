@@ -216,6 +216,9 @@ vox-ai-input/
 ## Development
 
 ```powershell
+# First-time setup on a new machine
+.\scripts\bootstrap_dev.ps1
+
 # Install dev dependencies
 pip install -r requirements-dev.txt
 
@@ -227,6 +230,10 @@ pip install pyinstaller pyinstaller-hooks-contrib
 pyinstaller build.spec --clean --noconfirm
 # Output in dist/VoxAIInput/
 ```
+
+### Codex Multi-Machine Development
+
+This repo includes `AGENTS.md` as persistent project context for fresh Codex sessions. For a clean machine or two-computer workflow, see `docs/codex-sync.md`.
 
 ## FAQ
 

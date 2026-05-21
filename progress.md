@@ -177,3 +177,5 @@
 - README / README_zh 顶部版本摘要更新为 v0.0.8，并同步悬浮按钮、OpenAI Responses、`--open-settings` 和 170+ 测试说明。
 - `.gitignore` 新增本地运行数据与评测输出忽略项：`data/`、`eval/results/`、`eval/reports/`。
 - 发布前验证通过：`py -3.12 -m compileall -q run.py src tests`；全量测试 `176 passed in 24.19s`。
+- 新增 Codex 多电脑同步配置：根目录 `AGENTS.md` 固化项目长期上下文，`docs/codex-sync.md` 说明新电脑初始化和分支同步流程，`.codex/config.toml.example` 提供可复制到 `~/.codex/config.toml` 的个人配置模板，`scripts/bootstrap_dev.ps1` 一键创建 venv、安装依赖并生成本机 `config.yaml`。
+- 使用 `codex debug prompt-input "ping"` 验证 `AGENTS.md` 已进入 Codex 模型可见上下文。

@@ -216,6 +216,9 @@ vox-ai-input/
 ## 开发
 
 ```powershell
+# 新电脑首次配置
+.\scripts\bootstrap_dev.ps1
+
 # 安装开发依赖
 pip install -r requirements-dev.txt
 
@@ -227,6 +230,10 @@ pip install pyinstaller pyinstaller-hooks-contrib
 pyinstaller build.spec --clean --noconfirm
 # 产物在 dist/VoxAIInput/
 ```
+
+### Codex 多电脑开发
+
+仓库根目录的 `AGENTS.md` 会作为新 Codex session 的项目级长期上下文。纯净电脑初始化、两台电脑同步和并行分支工作流见 `docs/codex-sync.md`。
 
 ## 常见问题
 

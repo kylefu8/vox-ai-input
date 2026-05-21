@@ -1,0 +1,10 @@
+# Optional Codex CLI defaults for a development machine.
+# Copy selected settings into ~/.codex/config.toml if you want them globally.
+# Keep secrets and machine-specific paths out of the repository.
+
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+model_reasoning_effort = "medium"
+
+# Enable live web search per session when you need current external information:
+# codex --search
