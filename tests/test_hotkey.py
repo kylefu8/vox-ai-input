@@ -5,6 +5,7 @@ hotkey 模块的单元测试
 """
 
 import pytest
+import threading
 from unittest.mock import MagicMock
 
 from pynput import keyboard
@@ -172,6 +173,33 @@ class TestHotkeyListenerCallbacks:
 
         # 只应触发一次
         self.on_activate.assert_called_once()
+
+    def test_async_callbacks_preserve_event_order(self):
+        """异步回调应按热键事件顺序执行，避免释放先于开始。"""
+        events = []
+        done = threading.Event()
+
+        def on_activate():
+            events.append("activate")
+
+        def on_deactivate():
+            events.append("deactivate")
+            done.set()
+
+        listener = HotkeyListener(
+            combination_str="ctrl+shift+space",
+            on_activate=on_activate,
+            on_deactivate=on_deactivate,
+            async_callbacks=True,
+        )
+
+        listener._on_press(keyboard.Key.ctrl_l)
+        listener._on_press(keyboard.Key.shift_l)
+        listener._on_press(keyboard.Key.space)
+        listener._on_release(keyboard.Key.space)
+
+        assert done.wait(1.0)
+        assert events == ["activate", "deactivate"]
 
 
 class TestHotkeyListenerCancel:

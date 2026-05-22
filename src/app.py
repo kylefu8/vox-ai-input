@@ -26,6 +26,7 @@ from src.config import (
     get_stt_config,
     get_ui_config,
     get_floating_control_config,
+    get_preview_overlay_config,
 )
 from src.hotkey import HotkeyListener
 from src.history import HistoryStore
@@ -34,6 +35,7 @@ from src.logger import setup_logger
 from src.notifier import play_start_sound, play_stop_sound, create_default_sounds
 from src.output import paste_text
 from src.countdown import CountdownOverlay
+from src.debug_trace import trace_floating_state
 from src.preview_overlay import PreviewOverlay
 from src.floating_control import FloatingControl
 from src.log_window import LogWindow
@@ -43,9 +45,27 @@ from src.updater import Updater
 from src.settings_window import open_settings
 from src.audio_files import cleanup_audio
 from src.tray import TrayIcon, STATE_IDLE, STATE_RECORDING, STATE_PROCESSING
+from src.ui_theme import normalize_ui_theme
+from src.dialogs import ask_yes_no, show_error, show_info
 from src.voice_pipeline import VoicePipeline
 
 log = setup_logger(__name__)
+
+
+class _DisabledPreviewOverlay:
+    """No-op replacement when the result preview capsule is disabled."""
+
+    def configure(self, theme=None, anchor_provider=None):
+        pass
+
+    def show(self, text="", status=""):
+        pass
+
+    def update_text(self, text, status=""):
+        pass
+
+    def dismiss(self):
+        pass
 
 
 class AIInputApp:
@@ -137,14 +157,17 @@ class AIInputApp:
         # 会话用量统计（让用户了解 API 调用次数）
         self._session_api_calls = 0
 
+        # 浮窗音量条节流，避免音频回调线程把 UI 队列灌满
+        self._last_audio_level_sent_at = 0.0
+
         # 历史记录（便于回看、复制和后续重润色）
         self._history_store = HistoryStore.from_config(get_history_config(self._config))
 
         # 录音倒计时浮窗
         self._countdown = CountdownOverlay()
 
-        # 预览浮窗（实时显示转写/润色状态和结果）
-        self._preview = PreviewOverlay()
+        # 结果预览胶囊；与悬浮录音按钮保持同一套视觉语言
+        self._preview = self._create_preview_overlay(self._config)
 
         # 屏幕悬浮录音按钮（可拖动；与热键/托盘共用同一状态）
         floating_cfg = get_floating_control_config(self._config)
@@ -251,6 +274,30 @@ class AIInputApp:
         self._shutdown_event.set()  # 通知主线程退出
         log.info("再见！")
 
+    def _create_preview_overlay(self, config):
+        """Create the optional result preview capsule."""
+        if get_preview_overlay_config(config)["enabled"]:
+            ui_cfg = get_ui_config(config)
+            return PreviewOverlay(theme=ui_cfg["theme"], anchor_provider=self._get_floating_preview_anchor)
+        return _DisabledPreviewOverlay()
+
+    def _reload_preview_overlay(self, new_config):
+        """Apply preview overlay enable/disable changes without restarting."""
+        enabled = get_preview_overlay_config(new_config)["enabled"]
+        current_enabled = not isinstance(self._preview, _DisabledPreviewOverlay)
+        if enabled == current_enabled:
+            self._preview.configure(theme=get_ui_config(new_config)["theme"], anchor_provider=self._get_floating_preview_anchor)
+            return
+        self._preview.dismiss()
+        self._preview = self._create_preview_overlay(new_config)
+
+    def _get_floating_preview_anchor(self):
+        """Return the floating mic rect so the result preview can sit nearby."""
+        floating = getattr(self, "_floating", None)
+        if not floating:
+            return None
+        return floating.get_preview_anchor_rect()
+
     def _on_hotkey_press(self):
         """
         热键按下回调 — 开始录音。
@@ -277,9 +324,45 @@ class AIInputApp:
 
     def _set_activity_state(self, state, message=None):
         """同步托盘和悬浮按钮状态。"""
-        self._tray.set_state(state)
+        trace_floating_state(
+            "app.set_activity.enter",
+            state=state,
+            message=message,
+            is_processing=getattr(self, "_is_processing", None),
+            recorder_is_recording=getattr(getattr(self, "_recorder", None), "is_recording", None),
+            floating_started=getattr(getattr(self, "_floating", None), "_started", None),
+            floating_hwnd=getattr(getattr(self, "_floating", None), "_native_hwnd", None),
+        )
         if hasattr(self, "_floating") and self._floating:
-            self._floating.set_state(state, message=message)
+            try:
+                self._floating.set_state(state, message=message)
+                trace_floating_state(
+                    "app.set_activity.floating_ok",
+                    state=state,
+                    seq=getattr(self._floating, "_state_seq", None),
+                    floating_state=getattr(self._floating, "_state", None),
+                    floating_hwnd=getattr(self._floating, "_native_hwnd", None),
+                )
+            except Exception as e:
+                trace_floating_state("app.set_activity.floating_error", state=state, error=repr(e))
+                log.debug("更新悬浮按钮状态失败: %s", e)
+        try:
+            self._tray.set_state(state)
+            trace_floating_state("app.set_activity.tray_ok", state=state)
+        except Exception as e:
+            trace_floating_state("app.set_activity.tray_error", state=state, error=repr(e))
+            log.debug("更新托盘状态失败: %s", e)
+
+    def _force_idle_if_quiescent(self):
+        """兜底同步：没有录音/处理时，确保悬浮 UI 回到空闲态。"""
+        try:
+            with self._processing_lock:
+                is_processing = self._is_processing
+            if self._recorder.is_recording or is_processing:
+                return
+            self._set_activity_state(STATE_IDLE)
+        except Exception as e:
+            log.debug("强制同步空闲状态失败: %s", e)
 
     def _on_floating_position(self, x, y):
         """保存悬浮按钮拖动后的位置。"""
@@ -328,11 +411,26 @@ class AIInputApp:
             on_auto_stop=self._on_auto_stop,
             on_countdown=self._on_countdown_start,
             on_audio_chunk=on_chunk,
+            on_level=self._on_audio_level,
         ):
             # 录音启动失败，恢复空闲状态
             log.error("录音启动失败，请检查麦克风")
             self._set_activity_state(STATE_IDLE, message="启动失败")
             self._preview.dismiss()
+
+    def _on_audio_level(self, rms):
+        """把录音 RMS 电平节流后同步给悬浮按钮。"""
+        now = time.monotonic()
+        if now - self._last_audio_level_sent_at < 0.04:
+            return
+        self._last_audio_level_sent_at = now
+
+        try:
+            level = min(1.0, max(0.0, float(rms)) * 18.0)
+            if hasattr(self, "_floating") and self._floating:
+                self._floating.set_audio_level(level)
+        except Exception:
+            pass
 
     def _stop_recording(self, source="hotkey"):
         """统一入口：停止录音并进入后台处理。"""
@@ -485,9 +583,12 @@ class AIInputApp:
                 on_raw_text=self._show_pipeline_raw_text,
                 on_final_text=self._show_pipeline_final_text,
             )
+            trace_floating_state("app.process_audio.result", has_result=bool(result))
             if not result:
                 self._preview.dismiss()
                 return
+
+            self._set_activity_state(STATE_IDLE)
 
             self._session_api_calls += result.api_calls
             log.info("⏱️  总处理耗时: %.1f 秒（本次会话已调用 API %d 次）",
@@ -496,6 +597,7 @@ class AIInputApp:
             self._last_result_text = result.final_text
             self._last_result_duration = result.duration
             if getattr(result, "polish_fallback", False):
+                self._set_activity_state(STATE_IDLE)
                 self._preview.update_text(result.final_text, status="⚠️ 润色失败，已使用原文")
 
             # 让用户看到结果后关闭浮窗
@@ -512,7 +614,9 @@ class AIInputApp:
             with self._processing_lock:
                 self._is_processing = False
             # 处理完毕，恢复空闲状态
+            trace_floating_state("app.process_audio.finally_idle")
             self._set_activity_state(STATE_IDLE)
+            threading.Timer(0.2, self._force_idle_if_quiescent).start()
 
     # ==================== 流式转写 ====================
 
@@ -554,9 +658,12 @@ class AIInputApp:
                 on_raw_text=self._show_pipeline_raw_text,
                 on_final_text=self._show_pipeline_final_text,
             )
+            trace_floating_state("app.process_streaming.result", has_result=bool(result))
             if not result:
                 self._preview.dismiss()
                 return
+
+            self._set_activity_state(STATE_IDLE)
 
             self._session_api_calls += result.api_calls
             log.info("⏱️  总处理耗时: %.1f 秒（本次会话已调用 API %d 次）",
@@ -565,6 +672,7 @@ class AIInputApp:
             self._last_result_text = result.final_text
             self._last_result_duration = result.duration
             if getattr(result, "polish_fallback", False):
+                self._set_activity_state(STATE_IDLE)
                 self._preview.update_text(result.final_text, status="⚠️ 润色失败，已使用原文")
 
             # 让用户看到结果后关闭浮窗
@@ -587,7 +695,9 @@ class AIInputApp:
                 cleanup_audio(wav_path)
             with self._processing_lock:
                 self._is_processing = False
+            trace_floating_state("app.process_streaming.finally_idle")
             self._set_activity_state(STATE_IDLE)
+            threading.Timer(0.2, self._force_idle_if_quiescent).start()
 
     def _create_pipeline(self):
         """创建当前配置下的核心语音处理流水线。"""
@@ -619,7 +729,10 @@ class AIInputApp:
 
     def _show_pipeline_final_text(self, final_text):
         """核心流水线产出最终文字后，更新预览浮窗。"""
+        trace_floating_state("app.show_final_text.enter", text_len=len(final_text or ""))
         self._preview.update_text(final_text, status="✅ 完成")
+        self._set_activity_state(STATE_IDLE)
+        trace_floating_state("app.show_final_text.idle_sent")
         time.sleep(0.5)  # 短暂展示最终结果
 
     # ==================== 日志窗口 ====================
@@ -646,32 +759,20 @@ class AIInputApp:
 
     def _update_flow(self):
         """更新流程：检查 → 提示 → 下载 → 替换。在后台线程执行。"""
-        import tkinter as tk
-        from tkinter import messagebox
-
         self._updater.check_for_updates(background=False)
 
         if self._updater.state == "up_to_date":
-            # 用临时 Tk 显示消息框
-            root = tk.Tk()
-            root.withdraw()
-            messagebox.showinfo(
+            show_info(
                 "检查更新",
                 f"已是最新版本 v{self._updater.current_version}",
-                parent=root,
             )
-            root.destroy()
             return
 
         if self._updater.state == "error":
-            root = tk.Tk()
-            root.withdraw()
-            messagebox.showerror(
+            show_error(
                 "检查更新失败",
                 self._updater.error_message,
-                parent=root,
             )
-            root.destroy()
             return
 
         if self._updater.state != "available":
@@ -679,9 +780,6 @@ class AIInputApp:
 
         # 有新版本 → 询问用户
         from src.updater import _is_frozen
-
-        root = tk.Tk()
-        root.withdraw()
 
         size_kb = self._updater.download_size / 1024 if self._updater.download_size else 0
         mode = self._updater.update_mode
@@ -698,11 +796,8 @@ class AIInputApp:
                 msg += f"全量安装包: {size_kb / 1024:.1f} MB\n\n"
             msg += "是否下载并更新？"
 
-            if messagebox.askyesno("发现新版本", msg, parent=root):
-                root.destroy()
+            if ask_yes_no("发现新版本", msg):
                 self._do_download_and_apply()
-            else:
-                root.destroy()
         else:
             # 源码模式 → 引导打开 Release 页面
             msg = (
@@ -712,44 +807,31 @@ class AIInputApp:
                 "  git pull\n\n"
                 "是否打开 GitHub Release 页面？"
             )
-            if messagebox.askyesno("发现新版本", msg, parent=root):
+            if ask_yes_no("发现新版本", msg):
                 self._updater.open_release_page()
-            root.destroy()
 
     def _do_download_and_apply(self):
         """下载并应用更新。"""
-        import tkinter as tk
-        from tkinter import messagebox
-
         log.info("开始下载更新 v%s ...", self._updater.latest_version)
         self._updater.download_update(background=False)
 
         if self._updater.state == "error":
-            root = tk.Tk()
-            root.withdraw()
-            messagebox.showerror("下载失败", self._updater.error_message, parent=root)
-            root.destroy()
+            show_error("下载失败", self._updater.error_message)
             return
 
         if self._updater.state == "ready":
-            root = tk.Tk()
-            root.withdraw()
-            if messagebox.askyesno(
+            if ask_yes_no(
                 "更新就绪",
                 "新版本已下载完成！\n\n"
                 "点击「是」将退出程序并自动更新。\n"
                 "更新完成后程序会自动重新启动。",
-                parent=root,
             ):
-                root.destroy()
                 log.info("用户确认更新，准备替换...")
                 if self._updater.apply_update():
                     # 退出当前程序，让 bat 脚本完成替换
                     self._shutdown()
                     import os
                     os._exit(0)
-            else:
-                root.destroy()
 
     # ==================== 设置窗口 ====================
 
@@ -769,7 +851,23 @@ class AIInputApp:
             ],
             initial_page=initial_page,
             initial_tab=initial_tab,
+            on_theme_change=self._apply_runtime_theme,
         )
+
+    def _apply_runtime_theme(self, theme):
+        """Apply a theme preview to always-on UI without persisting config."""
+        theme = normalize_ui_theme(theme)
+        language = get_ui_config(self._config)["language"]
+        try:
+            if hasattr(self, "_preview") and self._preview:
+                self._preview.configure(theme=theme, anchor_provider=self._get_floating_preview_anchor)
+        except Exception as e:
+            log.debug("更新预览胶囊主题失败: %s", e)
+        try:
+            if hasattr(self, "_floating") and self._floating:
+                self._floating.configure(theme=theme, language=language)
+        except Exception as e:
+            log.debug("更新悬浮按钮主题失败: %s", e)
 
     def _reload_config(self, new_config):
         """
@@ -846,7 +944,10 @@ class AIInputApp:
             if hasattr(self._tray, "set_language"):
                 self._tray.set_language(ui_cfg["language"])
 
-            # 11. 更新悬浮按钮显示、主题、语言和位置
+            # 11. 更新结果预览胶囊开关
+            self._reload_preview_overlay(new_config)
+
+            # 12. 更新悬浮按钮显示、主题、语言和位置
             floating_cfg = get_floating_control_config(new_config)
             self._floating.configure(
                 enabled=floating_cfg["enabled"],
@@ -856,7 +957,7 @@ class AIInputApp:
                 language=ui_cfg["language"],
             )
 
-            # 12. 热键变更时重建监听器
+            # 13. 热键变更时重建监听器
             hotkey_cfg = get_hotkey_config(new_config)
             old_hotkey = get_hotkey_config(self._config).get("combination", "")
             new_hotkey = hotkey_cfg.get("combination", "")

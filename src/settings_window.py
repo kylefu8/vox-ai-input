@@ -28,52 +28,15 @@ from src.i18n import (
     t,
 )
 from src.logger import setup_logger
+from src.tk_runtime import exclusive_tk_root
+from src.ui_theme import UI_THEMES, normalize_ui_theme
 
 log = setup_logger(__name__)
 
 _settings_open = False
 
 # ==================== 主题定义 ====================
-_THEMES = {
-    "dark": {
-        "bg": "#1B1E24",
-        "rail": "#20252D",
-        "surface": "#262B34",
-        "surface2": "#303743",
-        "border": "#4A5564",
-        "text": "#F6F8FA",
-        "text2": "#CBD5E1",
-        "muted": "#A8B3C2",
-        "accent": "#7DD3F0",
-        "accent_soft": "#263F4A",
-        "green": "#8BE0A8",
-        "red": "#FF8EA0",
-        "yellow": "#F7D47A",
-        "orange": "#F2AE6D",
-        "btn": "#343C49",
-        "btn_h": "#3F4A59",
-        "entry": "#222832",
-    },
-    "light": {
-        "bg": "#F8F9FC",
-        "rail": "#EEF2F7",
-        "surface": "#FFFFFF",
-        "surface2": "#F4F7FB",
-        "border": "#E2E8F0",
-        "text": "#1E293B",
-        "text2": "#64748B",
-        "muted": "#94A3B8",
-        "accent": "#0EA5E9",
-        "accent_soft": "#E0F2FE",
-        "green": "#22C55E",
-        "red": "#EF4444",
-        "yellow": "#EAB308",
-        "orange": "#F97316",
-        "btn": "#E2E8F0",
-        "btn_h": "#CBD5E1",
-        "entry": "#F1F5F9",
-    },
-}
+_THEMES = UI_THEMES
 
 # 当前主题（默认深色）
 _current_theme = "dark"
@@ -81,8 +44,7 @@ _C = _THEMES[_current_theme].copy()
 
 
 def _normalize_theme(theme):
-    theme = str(theme or "dark").strip().lower()
-    return theme if theme in _THEMES else "dark"
+    return normalize_ui_theme(theme)
 
 
 def _set_current_theme(theme):
@@ -233,6 +195,19 @@ def _provider_label(provider):
         "openai_responses": "OpenAI Responses",
         "anthropic": "Anthropic Messages",
     }.get(provider or "auto", provider or "未验证")
+
+
+def _profile_bool(value, default=True):
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in ("0", "false", "no", "off"):
+        return False
+    if text in ("1", "true", "yes", "on"):
+        return True
+    return default
 
 
 _LLM_PROVIDER_OPTIONS = [
@@ -658,6 +633,7 @@ class SettingsWindow:
         on_get_history_entries=None,
         initial_page="transcribe",
         initial_tab=None,
+        on_theme_change=None,
     ):
         global _settings_open
         _settings_open = True
@@ -668,9 +644,12 @@ class SettingsWindow:
         self._on_get_history_entries = on_get_history_entries
         self._initial_page = initial_page or "transcribe"
         self._initial_tab = initial_tab
+        self._on_theme_change = on_theme_change
         ui = current_config.get("ui", {}) or {}
         self._ui_language = normalize_ui_language(ui.get("language", "zh-CN"))
-        _set_current_theme(ui.get("theme", _current_theme))
+        self._initial_theme = _normalize_theme(ui.get("theme", _current_theme))
+        self._theme_saved = False
+        _set_current_theme(self._initial_theme)
         self._translate_options = self._make_translate_options()
         self._llm_profiles = self._build_llm_profiles()
         self._build_ui()
@@ -1244,6 +1223,8 @@ class SettingsWindow:
         self._llm_key_var = tk.StringVar(master=self._root)
         self._llm_model_var = tk.StringVar(master=self._root)
         self._llm_api_version_var = tk.StringVar(master=self._root, value="")
+        self._llm_allow_insecure_tls_var = tk.BooleanVar(master=self._root, value=False)
+        self._llm_host_header_var = tk.StringVar(master=self._root)
         self._llm_validate_status_var = tk.StringVar(master=self._root, value="")
         self._llm_resolved_base_url = ""
         self._llm_resolved_endpoint_input = ""
@@ -1325,6 +1306,38 @@ class SettingsWindow:
 
         add_field(self._t("API 类型"), self._llm_provider_choice_var, "provider")
         add_field(self._t("Endpoint"), self._llm_base_url_var)
+        tls_row = tk.Frame(fields, bg=_C["surface"])
+        tls_row.pack(fill="x", pady=(0, 10))
+        tk.Label(
+            tls_row,
+            text=self._t("私有网关"),
+            bg=_C["surface"],
+            fg=_C["text2"],
+            font=("Segoe UI Semibold", 9),
+            width=10,
+            anchor="w",
+        ).pack(side="left")
+        tk.Checkbutton(
+            tls_row,
+            text=self._t("IP/自签名兼容"),
+            variable=self._llm_allow_insecure_tls_var,
+            bg=_C["surface"],
+            fg=_C["text"],
+            selectcolor=_C["entry"],
+            activebackground=_C["surface"],
+            activeforeground=_C["text"],
+            font=("Segoe UI", 9),
+        ).pack(side="left", padx=(10, 0))
+        tk.Label(
+            tls_row,
+            text=self._t("Host（可选）"),
+            bg=_C["surface"],
+            fg=_C["muted"],
+            font=("Segoe UI", 9),
+        ).pack(side="left", padx=(12, 4))
+        host_entry = _entry(tls_row, var=self._llm_host_header_var, w=24)
+        host_entry.pack(side="left", fill="x", expand=True)
+        _tooltip(host_entry, self._t("留空会直接使用 Endpoint 的 IP；只有后端需要原域名路由时才填写。"))
         add_field(self._t("API Key"), self._llm_key_var, "secret")
         add_field(self._t("模型"), self._llm_model_var, "model")
 
@@ -1388,6 +1401,7 @@ class SettingsWindow:
         api_key = self._llm_key_var.get().strip()
         model = self._llm_model_var.get().strip()
         provider = self._llm_provider_var.get() or "auto"
+        transport_options = self._current_llm_transport_options()
         self._set_llm_validate_state(
             True,
             self._t("正在自动识别 API 类型...") if provider == "auto" else self._t("正在验证 API 连接..."),
@@ -1402,6 +1416,7 @@ class SettingsWindow:
                     endpoint,
                     api_key,
                     model,
+                    transport_options=transport_options,
                 )
                 preview = response.replace("\n", " ")[:80]
                 self._root.after(
@@ -1442,6 +1457,7 @@ class SettingsWindow:
         """后台尝试获取 endpoint 上可用模型列表。"""
         endpoint = self._llm_base_url_var.get().strip()
         api_key = self._llm_key_var.get().strip()
+        transport_options = self._current_llm_transport_options()
         if not endpoint:
             self._msg("error", "获取失败", "Endpoint 不能为空")
             return
@@ -1455,7 +1471,11 @@ class SettingsWindow:
             try:
                 from src.llm_clients import list_llm_models_with_base_url
 
-                models, errors, base_url = list_llm_models_with_base_url(endpoint, api_key)
+                models, errors, base_url = list_llm_models_with_base_url(
+                    endpoint,
+                    api_key,
+                    transport_options=transport_options,
+                )
                 self._root.after(0, lambda: self._on_llm_models_done(models, errors, base_url))
             except Exception as e:
                 self._root.after(0, lambda err=e: self._on_llm_models_done([], [str(err)], None))
@@ -1490,6 +1510,8 @@ class SettingsWindow:
         self._llm_key_var.set(profile.get("api_key", ""))
         self._llm_model_var.set(profile.get("model") or profile.get("deployment", ""))
         self._llm_api_version_var.set(profile.get("api_version", ""))
+        self._llm_allow_insecure_tls_var.set(_profile_bool(profile.get("allow_insecure_tls"), False))
+        self._llm_host_header_var.set(profile.get("host_header", ""))
         self._remember_resolved_base_url(profile.get("base_url", ""), endpoint=endpoint)
         self._llm_validate_status_var.set("")
 
@@ -1510,6 +1532,7 @@ class SettingsWindow:
         base_url = self._matching_resolved_base_url(endpoint)
         if base_url and base_url != endpoint:
             profile["base_url"] = base_url
+        self._apply_current_llm_transport(profile)
         api_version = self._llm_api_version_var.get().strip()
         if api_version:
             profile["api_version"] = api_version
@@ -1529,6 +1552,7 @@ class SettingsWindow:
             simplified["base_url"] = profile["base_url"]
         if profile.get("api_version"):
             simplified["api_version"] = profile["api_version"]
+        self._copy_llm_transport(profile, simplified)
         self._llm_profiles[name] = simplified
         self._set_llm_provider_choice(profile.get("provider", "openai_compatible"))
         self._llm_api_version_var.set(profile.get("api_version", ""))
@@ -1546,6 +1570,25 @@ class SettingsWindow:
         if endpoint and endpoint == getattr(self, "_llm_resolved_endpoint_input", ""):
             return getattr(self, "_llm_resolved_base_url", "")
         return ""
+
+    def _current_llm_transport_options(self):
+        options = {}
+        if hasattr(self, "_llm_allow_insecure_tls_var") and self._llm_allow_insecure_tls_var.get():
+            options["allow_insecure_tls"] = True
+        if hasattr(self, "_llm_host_header_var"):
+            host_header = self._llm_host_header_var.get().strip()
+            if host_header:
+                options["host_header"] = host_header
+        return options
+
+    def _apply_current_llm_transport(self, profile):
+        profile.update(self._current_llm_transport_options())
+
+    def _copy_llm_transport(self, source, target):
+        if source.get("allow_insecure_tls"):
+            target["allow_insecure_tls"] = True
+        if source.get("host_header"):
+            target["host_header"] = source["host_header"]
 
     def _update_llm_provider_label(self):
         if hasattr(self, "_llm_provider_label"):
@@ -2333,6 +2376,8 @@ class SettingsWindow:
             try:
                 ok, msg = self._on_save(cfg)
                 if ok:
+                    self._theme_saved = True
+                    self._initial_theme = _current_theme
                     self._msg("info", "保存成功", "配置已保存并立即生效。")
                     self._on_close()
                 else:
@@ -2723,6 +2768,15 @@ class SettingsWindow:
         old_palette = _C.copy()
         _set_current_theme("light" if _current_theme == "dark" else "dark")
         self._apply_theme_to_existing_widgets(old_palette)
+        self._notify_theme_change(_current_theme)
+
+    def _notify_theme_change(self, theme):
+        if not self._on_theme_change:
+            return
+        try:
+            self._on_theme_change(_normalize_theme(theme))
+        except Exception as e:
+            log.debug("同步运行时主题失败: %s", e)
 
     def _center_window(self):
         """首次打开时居中。"""
@@ -2735,6 +2789,8 @@ class SettingsWindow:
     def _on_close(self):
         global _settings_open
         _settings_open = False
+        if not self._theme_saved and _current_theme != self._initial_theme:
+            self._notify_theme_change(self._initial_theme)
         try:
             self._root.destroy()
         except Exception:
@@ -2758,23 +2814,27 @@ def open_settings(
     on_get_history_entries=None,
     initial_page="transcribe",
     initial_tab=None,
+    on_theme_change=None,
 ):
     """在新线程中打开设置窗口。"""
     global _settings_open
     if _settings_open:
         return
+    _settings_open = True
 
     def _run():
         try:
-            SettingsWindow(
-                current_config,
-                status_info,
-                on_save,
-                on_clear_history,
-                on_get_history_entries,
-                initial_page,
-                initial_tab,
-            ).run()
+            with exclusive_tk_root("settings"):
+                SettingsWindow(
+                    current_config=current_config,
+                    status_info=status_info,
+                    on_save=on_save,
+                    on_clear_history=on_clear_history,
+                    on_get_history_entries=on_get_history_entries,
+                    initial_page=initial_page,
+                    initial_tab=initial_tab,
+                    on_theme_change=on_theme_change,
+                ).run()
         except Exception as e:
             log.error("打开设置窗口失败: %s", e)
             global _settings_open

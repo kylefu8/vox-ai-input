@@ -16,6 +16,7 @@ import platform
 import queue
 import threading
 from src.logger import setup_logger
+from src.tk_runtime import acquire_tk_root, release_tk_root
 
 log = setup_logger(__name__)
 
@@ -374,7 +375,11 @@ class CountdownOverlay:
             log.debug("tkinter 或 Pillow 不可用，跳过倒计时浮窗")
             return
 
+        root = None
+        guard_acquired = False
         try:
+            acquire_tk_root("countdown")
+            guard_acquired = True
             root = tk.Tk()
             root.overrideredirect(True)
             root.attributes("-topmost", True)
@@ -439,3 +444,11 @@ class CountdownOverlay:
             root.mainloop()
         except Exception as e:
             log.debug("tkinter 倒计时异常: %s", e)
+        finally:
+            try:
+                if root and root.winfo_exists():
+                    root.destroy()
+            except Exception:
+                pass
+            if guard_acquired:
+                release_tk_root("countdown")

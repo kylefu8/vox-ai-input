@@ -11,7 +11,7 @@ from src.logger import setup_logger
 
 log = setup_logger("main")
 
-__version__ = "0.0.8"
+__version__ = "0.0.9"
 
 
 def _configure_windows_dpi():

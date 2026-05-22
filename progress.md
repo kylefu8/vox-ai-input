@@ -119,8 +119,8 @@
 - 相关测试通过：`11 passed in 0.19s`。
 - 全量测试通过：`152 passed in 18.90s`。
 - 已重启新版应用；launcher PID 30940，实际 Python 子进程 PID 46636。
-- 排查用户反馈的 `https://llm.haph.fun/` provider 报错：根路径返回 `{"status":"bad"}`，真正 OpenAI-compatible base 是 `https://llm.haph.fun/v1`。
-- 使用当前 API key 测试：`/v1/models` 可返回模型列表且包含 `claude-sonnet-4.6`，但实际调用 `claude-sonnet-4.6` 和 `claude-haiku-4.5` 均返回 503 `model_not_found`，消息为“分组 svip 下模型 ... 无可用渠道（distributor）”；`gpt-4o-mini` 可正常返回 `OK`。
+- 排查用户反馈的私有 provider 报错：根路径返回状态页，真正 OpenAI-compatible base 是 `/v1`。
+- 使用本机私有配置测试：`/v1/models` 可返回模型列表且包含部分 Claude 风格模型，但实际调用其中一些模型会返回 503 `model_not_found`，消息为“分组下模型 ... 无可用渠道（distributor）”；`gpt-4o-mini` 可正常返回 `OK`。
 - 调整 LLM 探测：用户输入根 URL 时优先尝试 `/v1`；普通自定义域名不再硬试 Azure；OpenAI-compatible 模型列表一旦成功就不继续混入 Azure/Anthropic 的无关错误。
 - 新增/更新 LLM client 单元测试；LLM 测试通过：`13 passed in 1.67s`。
 - 全量测试通过：`153 passed in 15.91s`。
@@ -128,14 +128,14 @@
 - 根据用户反馈“自动识别会把同一 provider 固定成 Chat Completions，导致 Responses-only 新模型失败”，新增 `openai_responses` LLM client，调用 `/v1/responses` 并解析 `output_text` / output content blocks。
 - 设置窗口润色 API 增加“API 类型”下拉框：自动识别、OpenAI Chat Completions、OpenAI Responses、Anthropic Messages。显式选择后验证只验证该协议，不再回退或改写为其他协议。
 - 配置校验、README / README_zh、config.example.yaml 已同步 `openai_responses`。
-- `llm.haph.fun` 真实测试：`gpt-4o-mini` 选择 Chat Completions 成功；选择 Responses 返回 provider 明确错误 “Supported backend(s): /chat/completions”，证明下拉选择能区分协议。
+- 私有 provider 真实测试：`gpt-4o-mini` 选择 Chat Completions 成功；选择 Responses 返回 provider 明确错误 “Supported backend(s): /chat/completions”，证明下拉选择能区分协议。
 - 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
 - 相关测试通过：`58 passed in 6.30s`；设置窗口 API 类型烟测通过：`settings api type smoke ok`。
 - 全量测试通过：`159 passed in 20.49s`。
 - 已重启新版应用；launcher PID 4316，实际 Python 子进程 PID 54048。
 - 根据用户反馈调整润色 API 操作顺序：将“获取模型”放在“验证并识别”左侧，符合先拉模型、再验证所选模型的流程。
 - 支持 endpoint 省略 `/v1`：验证/获取模型会记录后台解析出的实际 `base_url`，运行时优先使用 `base_url`；设置窗口仍显示用户原始输入的 `endpoint`。
-- `llm.haph.fun` 真实测试：输入 `https://llm.haph.fun` 可解析并保存 `base_url=https://llm.haph.fun/v1`；显式 Chat 验证返回 `OK`。
+- 私有 provider 真实测试：输入根 endpoint 可解析并保存 `/v1` base_url；显式 Chat 验证返回 `OK`。
 - 编译检查通过：`py -3.12 -m compileall -q run.py src tests`。
 - 相关测试通过：`59 passed in 2.27s`；设置窗口 endpoint/order 烟测通过：`settings endpoint order smoke ok`。
 - 全量测试通过：`160 passed in 19.14s`。
@@ -145,14 +145,14 @@
 - 根据用户要求将“自动分段、并列内容列表化、明确要求时提炼要点/待办/消息”等能力加入默认润色 prompt，同时强化术语、URL、路径、代码和模型名保护。
 - 新增 `eval/cases.yaml`，覆盖中文、英文、中英混杂、技术词、符号、数字、待办、会议要点、明确总结和短文本等评测样本；保留旧 prompt 到 `eval/prompts/baseline_old.txt` 方便 A/B。
 - 新增 `scripts/eval_polish.py`，支持 dry-run、模型/场景/样本筛选、prompt 文件覆盖、JSONL 原始结果、Markdown 摘要和静态 HTML 报告。
-- 排查 `llm.haph.fun`：系统 DNS 将域名解析到 `6.6.6.33` 并出现上海蓝云阻断页/ TLS 握手失败；DoH 正确解析为 `40.73.121.73`。使用 `https://40.73.121.73/v1` + `Host: llm.haph.fun` + 环境变量 `OPENAI_API_KEY` 可正常访问模型列表和请求接口。
+- 排查私有 provider：系统 DNS 解析到错误地址并出现拦截页 / TLS 握手失败；另一路解析返回真实地址。使用文档示例 `https://203.0.113.10/v1` + `Host: llm.example.com` + 环境变量中的 API key 可表达并验证 IP/Host/TLS workaround 场景。
 - 为评测脚本增加 direct endpoint workaround：`--host-header` 和 `--tls-no-verify`，仅用于本地评测直连，不改系统 hosts，不改应用配置。
-- 通过 `llm.haph.fun` 服务完成代表性矩阵评测：5 个模型、4 条代表样本、5 类场景，共 70 条结果；HTML 报告生成到 `eval/reports/latest.html`。
+- 通过私有 provider 完成代表性矩阵评测：5 个模型、4 条代表样本、5 类场景，共 70 条结果；HTML 报告生成到 `eval/reports/latest.html`。
 - 已启动本地静态报告服务：`http://127.0.0.1:8765/latest.html`，并用内置浏览器确认页面打开正常，结果卡片数 70。
 - 相关测试通过：`tests/test_polisher_prompt.py tests/test_llm_clients.py` 共 `22 passed in 2.30s`。
 - 用户要求第二轮长文本评测；已补强默认 prompt：开发/配置语境下保留 endpoint、base_url、Responses API、Chat Completions、API key、模型名等英文术语；明显枚举结构优先整理成编号列表。
 - 新增 4 条长文本样本：`long_zh_product_feedback`、`long_zh_meeting_minutes`、`long_mixed_api_workflow`、`long_en_product_feedback`。
-- 使用 `llm.haph.fun` direct workaround 完成第二轮长文本矩阵：5 个模型、4 条长文本、5 类场景，共 70 条结果；报告更新为 `eval/reports/20260521-105534.html`，`latest.html` 已刷新。
+- 使用私有 provider direct workaround 完成第二轮长文本矩阵：5 个模型、4 条长文本、5 类场景，共 70 条结果；报告更新为 `eval/reports/20260521-105534.html`，`latest.html` 已刷新。
 - 第二轮摘要：`gpt-5.5` 自动检查 1.000 但最慢；`gpt-5.4-mini` 0.9898 / 平均 4.9s，结构化和术语保留稳定；`gpt-4o-mini` 0.9898 / 平均 2.8s，速度最好但复杂“润色+英译”长会议文本会误保持中文；`gpt-5.4` 出现过度空行；`gpt-4o` 也在同一英译场景误保持中文且有 Markdown 风格输出。
 - 第二轮相关测试通过：`tests/test_polisher_prompt.py tests/test_llm_clients.py` 共 `22 passed in 1.99s`。
 - 根据用户要求“这些小机关要告诉用户”，在润色设置卡片中新增“语音小技巧”提示：总结成要点、整理成待办、写成消息、枚举自动列表化、技术词保留；Info 弹窗同步加入简短提示。
@@ -169,7 +169,7 @@
 - 已清理旧的重复 `run.py` 实例，并启动新版应用；launcher PID 9156，实际 Python 子进程 PID 53988；Win32 窗口枚举确认 `Vox Floating Control` 已显示。
 - 根据用户给出的真实例句，确认默认 prompt 过于保守：会保留 `ton尼`、`比较比较比较重`、`hand一下`、无意义“然后/呃/OK好”等转写残留。
 - 已将默认 prompt 调整为“标准语音转写后处理器”：更主动清理真实语音输入中的重复、口头禅、连接词堆叠、尾部截断片段，并增加中英混杂商务口语规则（如 `ton尼→Tony`、`hand一下→handle 一下`、`caseokok→case。OK`）。
-- 排查真实调用时发现 `llm.haph.fun` 偶发 SSL EOF，当前程序会降级返回原文；已新增 `Polisher.last_fallback_to_raw/last_error`，流水线会把润色失败写入结果和历史 metadata，预览状态会显示“润色失败，已使用原文”。
+- 排查真实调用时发现私有 provider 偶发 SSL EOF，当前程序会降级返回原文；已新增 `Polisher.last_fallback_to_raw/last_error`，流水线会把润色失败写入结果和历史 metadata，预览状态会显示“润色失败，已使用原文”。
 - 验证通过：`tests/test_polisher_prompt.py tests/test_voice_pipeline.py tests/test_i18n.py` 共 `17 passed in 3.12s`；全量测试 `176 passed in 24.16s`。
 - 已重启新版应用；launcher PID 18848，实际 Python 子进程 PID 35848。
 - 发布收口：将 `run.py` 和 `installer.iss` 版本号更新为 `0.0.8`。
@@ -181,3 +181,67 @@
 - 使用 `codex debug prompt-input "ping"` 验证 `AGENTS.md` 已进入 Codex 模型可见上下文。
 - 新增 `docs/bootstrap-dev.md`，详细说明 `scripts/bootstrap_dev.ps1` 的作用、参数、适用场景和让 Codex 先执行 bootstrap 的推荐方式；`AGENTS.md` 新增 `Fresh Clone Bootstrap` 规则，指导纯净 Codex 在 `.venv` / `config.yaml` 缺失时先初始化项目。
 - 继续补齐理想的 GitHub repo 入口工作流：`AGENTS.md` 新增 `GitHub Sync Before Work`，要求 Codex 每次开工先检查本地状态、干净时 fetch/pull --rebase、有本地改动时先询问；新增 `docs/codex-entry-prompts.md`，提供首次 clone、已有仓库续上和接着做具体任务的可复制提示词。
+
+## 2026-05-22
+- 在新机器 `E:\AI\Projects\vox-ai-input` 完成 fresh clone 工作区初始化：安装 Python 3.12.10，运行 `.\scripts\bootstrap_dev.ps1 -SkipVerify` 创建 `.venv`、安装运行/开发依赖并生成本机 `config.yaml`。
+- 首次验证通过：`.venv\Scripts\python.exe -m compileall -q run.py src tests`；全量测试通过：`176 passed in 12.79s`。
+- 根据用户反馈，润色 provider 需要支持只能通过 IP 访问且使用自签名证书的私有网关；此前仅评测脚本支持 direct endpoint workaround，主应用设置页和运行时还不支持。
+- 新增 LLM 私有网关兼容能力：profile 可保存 `allow_insecure_tls: true` 和可选 `host_header`；模型列表、OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和 Azure OpenAI 路径都会应用同一套连接选项。
+- 设置窗口润色 API 区域新增“私有网关”行：勾选“IP/自签名兼容”会跳过该 provider 连接的 TLS 证书校验；Host 标记为可选，留空时直接按 Endpoint 的 IP 访问，仅后端需要原域名路由时填写。
+- 已明确不引入单独 CA bundle / 证书链配置，避免把用户体验复杂化为证书管理。
+- README / README_zh / config.example.yaml 已同步 `allow_insecure_tls` 和可选 `host_header` 说明。
+- 编译检查通过；相关测试通过：`37 passed in 0.92s`。
+- 应用已用新代码重启并打开设置窗口；后台 PID 503428。
+- 根据用户反馈“浮动窗口不够灵动”，参考 Handy 的 recording overlay：透明胶囊、录音音量条、处理呼吸动效和右侧取消反馈。
+- 新增录音 RMS 电平回传：`Recorder.start(..., on_level=...)` 在音频回调中计算轻量 RMS，`AIInputApp` 节流后同步给悬浮按钮，不影响流式转写的 `on_audio_chunk`。
+- 重绘 `FloatingControl`：从静态 Tk frame 改为 Pillow RGBA 绘制；第一版胶囊仍显得像旧式按钮，随后收敛为空闲小浮点、hover/状态消息展开胶囊、录音展开音量条+计时、处理显示旋转指示。
+- 录音中右侧小按钮可取消，整体仍支持拖动、左键开始/停止、右键设置/取消，业务状态仍由 `AIInputApp` 统一管理。
+- 验证通过：编译检查通过；相关测试 `48 passed in 10.69s`；全量测试 `180 passed in 10.71s`。
+- 已重启新版应用；launcher PID 45256，实际 Python 子进程 PID 49352；Win32 截图确认空闲浮点和 hover 展开态可显示。
+- 用户继续反馈边缘粗糙、内部效果不好；最初原生路径因 `ctypes.wintypes.HCURSOR/UINT_PTR` 和 Win64 句柄 argtypes 问题实际 fallback 到 Tk，窗口类名仍是 `TkTopLevel`。
+- 已修复 Win32 ctypes 兼容：显式声明 User32/GDI 句柄函数 argtypes/restype，`CreateDIBSection` 使用正确 `BITMAPINFO` 指针，测试中 mock `FloatingControl` 避免真实窗口线程干扰。
+- Windows 路径现已确认为原生 layered window：窗口类名为 `VoxFloatingControl_*`，使用 `UpdateLayeredWindow` + 3x Pillow 离屏渲染 + premultiplied alpha，Tk 仅作为 fallback。
+- 内部麦克风图标从手画线条改为 Windows `Segoe MDL2 Assets` glyph；修复低透明 cyan 圆把底色“挖薄”的白芯问题，改为实心深色图标底。
+- 验证通过：编译检查通过；相关测试 `48 passed in 11.70s`；全量测试 `180 passed in 12.08s`。
+- 已重启新版应用；launcher PID 50780，实际 Python 子进程 PID 48328；截图确认原生空闲态和 hover 展开态可显示。
+- 根据用户反馈默认收起态仍不好看，删除“外圆 + 内圆 + 图标”的嵌套结构；默认态改为单层圆形深色浮点，只有居中麦克风 glyph，hover/状态时再展开为胶囊。
+- 修复默认态原生绘制提前返回绕过 3x→1x 缩放导致 DIB 写爆的问题，确认窗口类名仍为 `VoxFloatingControl_*`。
+- 验证通过：编译检查通过；相关测试 `48 passed in 10.44s`；全量测试 `180 passed in 10.39s`。
+- 已重启新版应用；launcher PID 7296，实际 Python 子进程 PID 45124；截图确认单层圆形默认态和 hover 展开态可显示。
+- 继续按用户“整体看看各种状态”的要求收口悬浮图标：将绘制逻辑提取为共享 `_render_control_image()`，Win32 原生 layered window 和 Tk fallback 复用同一套像素，避免两个分支观感漂移。
+- 悬浮图标尺寸体系调整为 42px：默认收起态为单层圆形深色浮点；hover/提示、录音、处理中统一为胶囊；使用 4x 离屏渲染后 Lanczos 缩放，细化边缘、阴影、音量条、取消按钮和处理动效。
+- 新增离屏视觉 QA 输出，覆盖默认、hover、录音、处理中、短消息和取消 hover；真实线程烟测确认原生窗口类名为 `VoxFloatingControl_*`，状态尺寸会在 `42x42`、`164x42`、`134x42` 间正确切换并右侧锚定。
+- 新增 `tests/test_floating_control.py`，验证各状态渲染尺寸和 alpha 像素非空，防止后续出现透明空图或尺寸回退。
+- 验证通过：`.venv\Scripts\python.exe -m compileall -q run.py src tests`；相关测试 `49 passed in 10.25s`；全量测试 `181 passed in 10.36s`。
+- 关于旧文字浮窗：当前 `PreviewOverlay` 仍承担转写/润色结果预览、失败降级提示和流式转写中间文本展示，不建议现在删除；应把它定位为“结果预览浮窗”，与悬浮麦克风的“录音控制/状态入口”分工，后续再单独做视觉翻新或提供独立开关。
+- 根据用户反馈去掉悬浮图标顶部装饰弧线：默认圆点和展开胶囊不再绘制内侧高光弧线，保留处理中旋转圆环作为状态指示；重新导出状态蒙太奇验证观感。
+- 根据用户反馈修正悬浮图标胶囊内部垂直对齐：内部元素统一按胶囊本体中心线排布，文字改为视觉垂直居中绘制，音量条改为围绕中心线对称伸缩；验证通过：`tests/test_floating_control.py` 通过，全量测试 `181 passed in 10.56s`。
+- 修复录音态秒表被取消按钮遮挡的问题：录音胶囊宽度从 164px 增至 178px，秒表和取消按钮重新留出间距；重新导出状态图确认 `00:08` / `01:12` 不再重叠，全量测试 `181 passed in 10.59s`。
+- 根据用户截图继续微调录音态麦克风图标：红色圆内 glyph 单独缩小，避免图标贴边造成遮挡感；重新导出状态图验证，全量测试 `181 passed in 11.69s`。
+- 根据用户偏好统一悬浮图标的圆环元素：以处理中金色圆环为基准，将 mic 圆环、录音圆环和取消按钮统一为 12px 半径、3px 线宽，mic glyph 继续缩小；重新导出状态图验证，全量测试 `181 passed in 10.56s`。
+- 继续适配悬浮图标内部元素：将 mic 从字体 glyph 改成固定线宽的矢量小图标，X 按同一中心/线宽重绘，中间音量条收成更克制的 meter；重新导出状态图验证，全量测试 `181 passed in 11.96s`。
+- 根据用户反馈增强录音态颜色辨识度：将浅粉录音色调整为更饱和的珊瑚红，并提高录音边框、mic 圆环和取消按钮圆环透明度；重新导出状态图验证，全量测试 `181 passed in 11.92s`。
+- 根据用户反馈继续去粉色化录音态：录音主色改为更明确的 signal red，取消按钮描边也统一使用同色红；重新导出状态图确认录音态更醒目，全量测试 `181 passed in 11.66s`。
+- 根据用户反馈增强录音态内部图标对比：录音 mic 使用更大的纯白矢量符号，取消按钮内部改为更实的红底并加粗纯白 X；重新导出状态图验证，全量测试 `181 passed in 10.43s`。
+- 根据用户指出“顶部弧线仍在”，确认残留来自胶囊本体 `rounded_rectangle outline`，不是之前的高光弧线；已移除胶囊状态色外框，只保留深色胶囊本体和内部圆环/图标表达状态，重新导出状态图验证，全量测试 `181 passed in 11.76s`。
+- 根据用户反馈旧文字预览浮窗与新版悬浮胶囊重复且显旧，改为默认关闭：新增 `ui.preview_overlay.enabled` 配置，默认 `false`；主流程保留 no-op 预览接口，手动开启时仍可用于流式调试/结果预览；配置模板已同步，相关测试 `69 passed in 10.92s`，全量测试 `183 passed in 10.66s`。
+- 根据用户希望保留“跟胶囊一样视觉效果”的结果预览，将 `PreviewOverlay` 从旧 Tk 文本气泡重做为结果预览胶囊：Windows 使用 `UpdateLayeredWindow` + per-pixel alpha，Tk 仅保留 fallback；预览优先显示在悬浮录音胶囊下方，拿不到锚点时回到底部居中；默认重新开启 `ui.preview_overlay.enabled: true`，用于展示流式中间文本、转写/润色状态、最终结果和降级提示。
+- 新增 `tests/test_preview_overlay.py`，覆盖预览胶囊各状态离屏渲染、alpha 非空和锚点定位；导出视觉 QA 图 `data/floating_qa/rendered/preview_overlay_montage.png`。验证通过：`.venv\Scripts\python.exe -m compileall -q run.py src tests`；相关测试 `73 passed in 12.81s`；全量测试 `186 passed in 13.07s`。
+- 已重启新版应用；launcher PID `70108`，实际 Python 子进程 PID `70016`；窗口枚举确认主悬浮按钮仍为原生 `VoxFloatingControl_*`，预览胶囊 smoke test 确认为原生 `VoxPreviewOverlay_*`，示例位置 `(1503, 570, 1739, 640)`。
+- 用户反馈“样子还不错，但是卡住了”后排查到主悬浮按钮停在 `178x42` 录音态，而预览胶囊已隐藏，说明卡住点更接近热键/录音状态回落而不是预览窗口本身。已先重启恢复空闲态，再将 `HotkeyListener` 的开始/停止/取消回调改为顺序后台队列执行，避免在键盘监听锁/监听线程里直接停止音频流和更新 UI；同时预览胶囊只在处理中状态做帧动画，完成/警告等静态状态不再持续重绘。验证通过：编译检查；相关测试 `100 passed in 11.82s`；全量测试 `187 passed in 12.13s`。
+- 用户截图确认“润色完以后”主悬浮胶囊仍卡在录音态（红 mic、音量条、计时、取消按钮），再次确认不是结果预览胶囊。已撤回主应用里的异步热键业务队列，保留“回调不持锁”的热键改进，避免异步队列在 release 后又接受滞后的二次 activate；同时给 `FloatingControl` 增加状态序号，UI 线程忽略旧状态，非录音状态会清空音量条残留；处理线程结束后 0.2 秒增加 `_force_idle_if_quiescent()` 兜底，确认无录音/无处理时再次推送 idle。验证通过：编译检查；相关测试 `67 passed in 11.69s`；全量测试 `187 passed in 11.64s`。
+- 用户继续反馈仍卡住，并询问是否已重启。窗口句柄核对确认当前卡住窗口属于已重启后的新进程（PID `75244`），不是旧残留；历史记录也显示润色/粘贴已完成，说明卡点在处理完成后的 UI 收口。已将 `_set_activity_state()` 调整为先更新主悬浮胶囊、再更新托盘，并让托盘异常不影响悬浮按钮；新增测试保证悬浮按钮先于托盘更新、托盘失败时悬浮按钮仍能收到 idle。验证通过：编译检查；相关测试 `69 passed in 11.41s`；全量测试 `189 passed in 11.61s`。
+- 用户截图继续显示“结果预览胶囊已经进入最终/失败提示，但主悬浮胶囊仍是红色录音态”。本轮确认新进程 PID `76000` 仍复现，且独立 smoke test 证明新 `FloatingControl` 在收到状态命令时可从 `178x42` 正常收回 `42x42`，因此改为强化原生 UI 唤醒与自校准：状态入队后通过 `PostMessageW(_WM_WAKE)` 立即唤醒窗口过程，不再只依赖 `WM_TIMER`；队列处理/刷新异常会被捕获；每个 tick 直接对比主线程最新 `self._state_seq/self._state`，发现 UI 停留在旧 recording 时强制同步到最新状态并清空音量条。验证通过：编译检查；相关测试 `69 passed in 12.74s`；全量测试 `189 passed in 12.86s`。
+- 用户继续反馈主胶囊卡在“处理中”且拖不动。窗口枚举确认新进程 PID `64976` 里主胶囊停在 `134x42` processing，历史已写入，说明最终结果已产生但主胶囊没有及时收回。已将最终文本 callback `_show_pipeline_final_text()` 改为立即推送 `STATE_IDLE`，并在 `pipeline.process_audio/process_text` 返回后再次推 idle，避免后续日志、sleep、preview dismiss、cleanup 任一步延迟时主胶囊继续显示处理中；同时修复拖动时 `WM_MOUSELEAVE` / Tk `<Leave>` 清掉 pressed 导致小窗口拖动中断的问题。验证通过：编译检查；相关测试 `69 passed in 13.46s`；全量测试 `189 passed in 13.75s`。
+- 用户反馈拖动后的悬浮胶囊在一次录音/处理结束后会回到原始位置。已将位置语义收敛为“空闲 42px 小圆左上角”这一单一坐标源：录音/处理中/hover 胶囊都以该点的右边缘锚定向左展开，拖动释放时把当前展开窗口矩形反算回空闲小圆坐标并持久化；原生 idle reset/rebuild 前也先记住这个 resting position，避免收回空闲时又使用旧窗口位置。已补坐标模型回归测试覆盖 42/134/178px 三种宽度。
+- 用户反馈当前悬浮胶囊没有适配主界面配色。已新增共享 `src/ui_theme.py`，设置窗口、悬浮麦克风和结果预览胶囊共用同一套深浅主题语义色；浮窗 palette 从主界面的 `surface/text/accent/red/yellow` 派生。设置窗口点击主题按钮时会实时通知主应用同步常驻胶囊，保存后持久化，取消则把胶囊回滚到原主题。验证通过：编译检查；相关测试 `96 passed in 12.87s`；全量测试 `200 passed in 13.00s`。已重启新版应用，launcher PID `58704`，实际 Python 子进程 PID `84336`，窗口枚举确认主悬浮按钮仍为原生 `VoxFloatingControl_*` 且可见未卡死。
+- 用户反馈浅色胶囊纯白稍微看不清。已将悬浮麦克风和结果预览胶囊的浅色底从主界面纯白 `surface` 改为浅灰 `surface2`，hover 使用更深一层 `rail`，保持和主界面同源但提高桌面上的边界辨识度。
+- 用户指出未展开的小圆仍然偏白。已给浅色主题新增 `idle_bg` 派生色，让空闲 42px 小圆也使用和展开态一致的浅灰层级，并把空闲圆底改为不透明填充，避免截图里看起来发白。
+- 用户反馈程序 hung 死，Windows Application 日志确认是 `python.exe` 在 `tcl86t.dll` 里原生崩溃（异常码 `0x80000003`），不是普通 Python 异常；结合代码确认存在多个独立 Tk root 跨线程同时运行的风险。
+- 已做结构化 Tk/Tcl 收口：新增 `src/tk_runtime.py` 作为进程级 Tk root 守卫；更新弹窗改为 Windows 原生 `MessageBoxW`，不再临时创建 Tk；设置窗口、日志窗口、倒计时/预览/悬浮 Tk fallback 都进入同一守卫。
+- 日志窗口改为首次打开时才创建 Tk，关闭时销毁并释放守卫，避免隐藏的日志 Tk root 长期占用导致设置窗口被阻塞。
+- 新增 `tests/test_dialogs.py`、`tests/test_app_update_dialogs.py`、`tests/test_settings_window_tk_guard.py`，覆盖 Windows 弹窗不走 Tk、更新流程使用共享弹窗、设置窗口进入 Tk 守卫；验证通过：编译检查；相关测试 `14 passed in 0.78s`；全量测试 `214 passed in 9.00s`。
+- 已重启新版应用；Python PID `100576` 响应正常；重启后最近 5 分钟 Windows Application 日志未发现新的 `python.exe` / `tcl86t.dll` 崩溃记录。
+- 发布收口：将 `run.py` 和 `installer.iss` 版本号更新为 `0.0.9`，新增 `_release_note_v0.0.9.md`，README / README_zh 顶部版本摘要更新为 v0.0.9。
+- 按用户要求完成隐私收口：项目记录、评测样例和测试中的真实私有 provider 域名/IP 已替换为 `llm.example.com`、`203.0.113.10` 等文档占位值；`config.yaml` 未进入待提交列表。
+- 发布前验证通过：`.venv\Scripts\python.exe -m compileall -q run.py src tests`；全量测试 `214 passed in 9.01s`。

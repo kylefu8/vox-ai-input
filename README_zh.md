@@ -8,7 +8,7 @@
 
 支持中英文混合识别、口述符号自动转换（如"艾特" → @），AI 自动修正标点和语法，可选实时翻译到 9 种语言。
 
-> **v0.0.8 悬浮麦克风 + 更强润色！** 新增可拖动录音按钮、中英文界面、深浅色切换、软件说明弹窗、可选 API 类型（含 OpenAI Responses），并升级默认语音清理 prompt。
+> **v0.0.9 悬浮 UI 打磨 + 私有网关兼容。** 继续优化悬浮麦克风/结果胶囊，支持跟随主界面深浅配色，新增 IP/自签名私有网关兼容，并收口 Windows Tk/Tcl 窗口崩溃风险。
 
 ## 功能特性
 
@@ -20,7 +20,7 @@
   - 设置窗口一键下载模型
 - **AI 智能润色** — 自动修正标点、去口水词、自动分段，并把口述清单整理成编号事项
 - **多 API 润色端点** — 支持 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 和 OpenAI-compatible 网关
-- **悬浮录音控制** — 可拖动的置顶麦克风按钮，可点击开始/停止录音，并同步快捷键/托盘状态
+- **悬浮录音控制** — 可拖动的置顶麦克风按钮，可点击开始/停止录音，并同步快捷键、托盘和深浅配色
 - **历史记录** — 自动保存最近输出，可在设置窗口回看并复制
 - **中英混合识别** — 中英文夹杂也能准确识别，技术术语保留英文
 - **符号口述转换** — 说"艾特"输出 @、说"井号"输出 #
@@ -91,7 +91,7 @@ python run.py
 | **拖动悬浮麦克风** | 移动位置，松手后自动保存 |
 | **录音中按 Esc** | 取消当前录音 |
 | **托盘右键 → 设置** | 打开设置窗口 |
-| **设置右上角 → 界面/主题/关于** | 切换界面语言、深浅配色，查看软件说明 |
+| **设置右上角 → 界面/主题/关于** | 切换界面语言、深浅配色，悬浮胶囊会同步换肤 |
 | **托盘右键 → 日志** | 打开实时日志窗口 |
 | **托盘右键 → 检查更新** | 检查 GitHub 新版本 |
 
@@ -135,6 +135,7 @@ python run.py
 | `ui.language` | 设置窗口和托盘菜单语言：`zh-CN` / `en` | `zh-CN` |
 | `ui.theme` | 设置窗口配色：`dark` / `light` | `dark` |
 | `ui.floating_control.enabled` | 是否显示可拖动悬浮录音按钮 | `true` |
+| `ui.preview_overlay.enabled` | 是否显示结果预览胶囊 | `true` |
 | `stt.backend` | 转写引擎，固定为本地离线 | `local` |
 | `stt.model_type` | 本地模型：`sense_voice`、`whisper_small` 或 `paraformer_streaming` | `sense_voice` |
 | `recording.sample_rate` | 采样率 (Hz) | `16000` |
@@ -148,6 +149,8 @@ python run.py
 | `llm_profiles.default.provider` | API 类型：`auto`、`openai_compatible`、`openai_responses` 或 `anthropic` | `auto` |
 | `llm_profiles.default.endpoint` | 润色 API endpoint | `""` |
 | `llm_profiles.default.base_url` | 可选的运行时 API base，通常由 endpoint 自动解析填入 | 未设置 |
+| `llm_profiles.default.allow_insecure_tls` | 可信私有网关使用 IP/自签名直连时启用 | `false` |
+| `llm_profiles.default.host_header` | 可选；仅当后端需要原域名路由时发送的 Host 头 | `""` |
 | `llm_profiles.default.api_key` | 润色 API Key | `""` |
 | `llm_profiles.default.model` | 模型名 | `""` |
 | `history.enabled` | 是否保存最近输出历史 | `true` |
@@ -156,6 +159,8 @@ python run.py
 ### 润色 API 设置
 
 设置窗口的“润色”页现在可以选择 API 类型，并填写 Endpoint、API Key、模型名称。`OpenAI Chat Completions` 对应 `/v1/chat/completions`，`OpenAI Responses` 对应 `/v1/responses`，`Anthropic Messages` 对应 `/v1/messages`；也可以保留自动识别。点击“获取模型”会尽量从 endpoint 拉取可用模型列表，并可在后台解析缺失的 `/v1`。界面仍显示你输入的 endpoint，实际 API base 会保存为 `base_url` 并在运行时使用。也可以手动编辑：
+
+如果网关只能通过 IP 访问，且使用自签名证书，可以在设置页启用“IP/自签名兼容”。Host 可以留空；只有后端需要原域名路由时才填写。该模式只建议用于你信任的内网或自有网关。
 
 ```yaml
 polish:
@@ -167,6 +172,8 @@ llm_profiles:
     provider: "openai_responses"
     endpoint: "https://api.openai.com"
     base_url: "https://api.openai.com/v1"
+    allow_insecure_tls: false
+    host_header: ""
     api_key: "sk-..."
     model: "gpt-5.4-mini"
 ```
@@ -206,7 +213,7 @@ vox-ai-input/
 │   ├── paths.py            # 路径工具（兼容打包/源码模式）
 │   ├── interfaces.py       # Protocol 接口定义
 │   └── logger.py           # 统一日志（UTF-8 安全）
-├── tests/                  # 170+ 测试用例
+├── tests/                  # 200+ 测试用例
 ├── models/                 # 本地 STT 模型（用户按需下载，不含在 git 中）
 ├── assets/sounds/          # 录音提示音
 ├── scripts/                # 构建辅助脚本

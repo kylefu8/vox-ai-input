@@ -88,9 +88,9 @@ cases:
   - id: mixed_endpoint_api
     title: 中英混杂 API 设置
     language: mixed
-    text: "这个 llm.haph.fun 的 endpoint 用户可以不写 v1 但是后台要保存 base_url 然后 API 类型可以选 Chat Completions 或者 Responses"
+    text: "这个 llm.example.com 的 endpoint 用户可以不写 v1 但是后台要保存 base_url 然后 API 类型可以选 Chat Completions 或者 Responses"
     categories: [mixed, technical, api]
-    preserve_terms: [llm.haph.fun, endpoint, v1, base_url, API, Chat Completions, Responses]
+    preserve_terms: [llm.example.com, endpoint, v1, base_url, API, Chat Completions, Responses]
     translation_targets: [en, zh]
 
   - id: mixed_models
@@ -176,9 +176,9 @@ cases:
   - id: long_zh_meeting_minutes
     title: 长中文会议整理
     language: zh
-    text: "帮我整理成会议纪要今天我们主要讨论了四个事情第一个是本地转录已经足够稳定所以在线转录先不做第二个是设置页面现在比之前清楚但是保存按钮和模型列表还可以继续压缩第三个是润色功能要区分默认清理和高级改写默认只去口水词加标点修错字高级模式再做总结待办和邮件化第四个是模型评测先用 llm.haph.fun 跑 gpt-5.4-mini gpt-5.4 gpt-4o-mini 看看速度质量和术语保留哪个平衡最好最后行动项是我来补 prompt 你来跑长文本测试然后把结果做成网页"
+    text: "帮我整理成会议纪要今天我们主要讨论了四个事情第一个是本地转录已经足够稳定所以在线转录先不做第二个是设置页面现在比之前清楚但是保存按钮和模型列表还可以继续压缩第三个是润色功能要区分默认清理和高级改写默认只去口水词加标点修错字高级模式再做总结待办和邮件化第四个是模型评测先用 llm.example.com 跑 gpt-5.4-mini gpt-5.4 gpt-4o-mini 看看速度质量和术语保留哪个平衡最好最后行动项是我来补 prompt 你来跑长文本测试然后把结果做成网页"
     categories: [long, zh, explicit_summary, meeting, list, technical]
-    preserve_terms: [llm.haph.fun, gpt-5.4-mini, gpt-5.4, gpt-4o-mini, prompt]
+    preserve_terms: [llm.example.com, gpt-5.4-mini, gpt-5.4, gpt-4o-mini, prompt]
     translation_targets: [en]
 
   - id: long_mixed_api_workflow

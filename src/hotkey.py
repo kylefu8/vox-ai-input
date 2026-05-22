@@ -6,6 +6,7 @@
 """
 
 import platform
+import queue
 import sys
 import threading
 
@@ -109,7 +110,7 @@ class HotkeyListener:
     会自动处理长按时的重复 press 事件（只触发一次 on_activate）。
     """
 
-    def __init__(self, combination_str, on_activate, on_deactivate, on_cancel=None):
+    def __init__(self, combination_str, on_activate, on_deactivate, on_cancel=None, async_callbacks=False):
         """
         初始化热键监听器。
 
@@ -118,10 +119,14 @@ class HotkeyListener:
             on_activate: 按下快捷键时的回调函数（开始录音）
             on_deactivate: 松开快捷键时的回调函数（停止录音）
             on_cancel: 按 Esc 时的回调函数（取消录音），可选
+            async_callbacks: 是否用后台队列顺序执行回调，避免阻塞键盘监听线程
         """
         self.on_activate = on_activate
         self.on_deactivate = on_deactivate
         self.on_cancel = on_cancel
+        self._async_callbacks = bool(async_callbacks)
+        self._callback_queue = queue.Queue()
+        self._callback_worker_started = False
 
         # 解析快捷键
         self._modifiers, self._trigger = _parse_hotkey_combination(combination_str)
@@ -139,6 +144,36 @@ class HotkeyListener:
 
         # pynput 监听器
         self._listener = None
+
+    def _ensure_callback_worker(self):
+        """启动顺序回调 worker，避免键盘 hook 线程执行耗时操作。"""
+        if self._callback_worker_started:
+            return
+        self._callback_worker_started = True
+        threading.Thread(target=self._run_callback_worker, daemon=True).start()
+
+    def _run_callback_worker(self):
+        """按事件顺序执行热键回调。"""
+        while True:
+            name, callback = self._callback_queue.get()
+            self._invoke_callback(name, callback)
+
+    def _dispatch_callback(self, name, callback):
+        """执行或排队执行回调。"""
+        if not callback:
+            return
+        if self._async_callbacks:
+            self._ensure_callback_worker()
+            self._callback_queue.put((name, callback))
+            return
+        self._invoke_callback(name, callback)
+
+    @staticmethod
+    def _invoke_callback(name, callback):
+        try:
+            callback()
+        except Exception as e:
+            log.error("%s 回调出错: %s", name, e)
 
     def start(self):
         """
@@ -210,6 +245,8 @@ class HotkeyListener:
         检查当前按下的键是否构成完整的快捷键组合。
         按 Esc 键时，如果正在录音，则取消。
         """
+        callback = None
+        callback_name = ""
         with self._lock:
             # 检查是否按了 Esc（取消录音）
             if key == keyboard.Key.esc and self._is_active:
@@ -217,21 +254,18 @@ class HotkeyListener:
                 self._trigger_pressed = False
                 self._pressed_modifiers.clear()  # 清除残留的修饰键状态
                 log.info("❌ 按下 Esc — 取消录音")
-                if self.on_cancel:
-                    try:
-                        self.on_cancel()
-                    except Exception as e:
-                        log.error("on_cancel 回调出错: %s", e)
-                return
+                callback = self.on_cancel
+                callback_name = "on_cancel"
 
             # 检查是否是修饰键
-            for mod in self._modifiers:
-                if self._match_key(key, mod):
-                    self._pressed_modifiers.add(mod)
-                    return
+            if not callback:
+                for mod in self._modifiers:
+                    if self._match_key(key, mod):
+                        self._pressed_modifiers.add(mod)
+                        return
 
             # 检查是否是触发键
-            if self._match_key(key, self._trigger):
+            if not callback and self._match_key(key, self._trigger):
                 self._trigger_pressed = True
 
                 # 检查所有修饰键是否都已按下
@@ -240,24 +274,21 @@ class HotkeyListener:
                         # 首次触发，调用 on_activate
                         self._is_active = True
                         log.info("🔴 热键按下 — 触发录音")
-                        try:
-                            self.on_activate()
-                        except Exception as e:
-                            log.error("on_activate 回调出错: %s", e)
+                        callback = self.on_activate
+                        callback_name = "on_activate"
 
-    def _deactivate(self):
+        self._dispatch_callback(callback_name, callback)
+
+    def _deactivate_locked(self):
         """
-        内部方法：执行去激活操作（停止录音回调）。
+        内部方法：更新去激活状态，并返回停止录音回调。
 
         必须在 self._lock 锁内调用。
         """
         self._is_active = False
         self._trigger_pressed = False
         log.info("⚪ 热键松开 — 停止录音")
-        try:
-            self.on_deactivate()
-        except Exception as e:
-            log.error("on_deactivate 回调出错: %s", e)
+        return self.on_deactivate
 
     def _on_release(self, key):
         """
@@ -266,17 +297,20 @@ class HotkeyListener:
         当触发键或任何修饰键松开时，如果之前处于激活状态，
         则调用 on_deactivate 回调。
         """
+        callback = None
         with self._lock:
             # 检查是否松开了修饰键
             for mod in self._modifiers:
                 if self._match_key(key, mod):
                     self._pressed_modifiers.discard(mod)
                     if self._is_active:
-                        self._deactivate()
-                    return
+                        callback = self._deactivate_locked()
+                    break
+            else:
+                # 检查是否松开了触发键
+                if self._match_key(key, self._trigger):
+                    self._trigger_pressed = False
+                    if self._is_active:
+                        callback = self._deactivate_locked()
 
-            # 检查是否松开了触发键
-            if self._match_key(key, self._trigger):
-                self._trigger_pressed = False
-                if self._is_active:
-                    self._deactivate()
+        self._dispatch_callback("on_deactivate", callback)

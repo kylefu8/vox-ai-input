@@ -143,3 +143,14 @@ class TestRecorderAudioCallback:
             r._audio_callback(fake_data, 1, None, None)
 
         assert len(r._audio_chunks) == 5
+
+    def test_callback_reports_rms_level(self):
+        """回调应把轻量 RMS 电平交给外部 UI 使用。"""
+        r = Recorder()
+        levels = []
+        r._on_level = levels.append
+        fake_data = np.array([[0.3], [0.4]], dtype=np.float32)
+
+        r._audio_callback(fake_data, 2, None, None)
+
+        assert levels == [pytest.approx(0.35355, rel=1e-3)]

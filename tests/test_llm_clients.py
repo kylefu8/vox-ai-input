@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 from src.llm_clients import (
     AnthropicLLMClient,
     AzureOpenAILLMClient,
+    HTTPTransportOptions,
     OpenAICompatibleLLMClient,
     OpenAIResponsesLLMClient,
     LLMOptions,
@@ -96,6 +97,22 @@ def test_openai_compatible_uses_max_tokens():
     assert "max_completion_tokens" not in kwargs
 
 
+def test_openai_compatible_supports_insecure_host_header_transport():
+    """IP/self-signed gateways can use verify=False plus an explicit Host header."""
+    with patch("src.llm_clients.httpx.Client") as httpx_client, \
+            patch("src.llm_clients.OpenAI") as openai_factory:
+        OpenAICompatibleLLMClient(
+            base_url="https://203.0.113.10/v1",
+            api_key="key",
+            model="gpt-4o-mini",
+            transport=HTTPTransportOptions(allow_insecure_tls=True, host_header="llm.example.com"),
+        )
+
+    assert httpx_client.call_args.kwargs["verify"] is False
+    assert httpx_client.call_args.kwargs["headers"] == {"Host": "llm.example.com"}
+    assert openai_factory.call_args.kwargs["http_client"] == httpx_client.return_value
+
+
 def test_openai_responses_posts_responses_payload():
     """Responses adapter 应调用 /responses 并解析 output_text。"""
     fake_response = MagicMock()
@@ -120,6 +137,30 @@ def test_openai_responses_posts_responses_payload():
     assert payload["input"] == "user"
     assert payload["max_output_tokens"] == 42
     assert "temperature" not in payload
+
+
+def test_openai_responses_supports_insecure_host_header_transport():
+    """Responses requests should pass TLS context and Host header to urllib."""
+    fake_response = MagicMock()
+    fake_response.read.return_value = b'{"output_text":"ok"}'
+    fake_context = MagicMock()
+    fake_context.__enter__.return_value = fake_response
+
+    def fake_urlopen(request, timeout, context=None):
+        assert request.headers["Host"] == "llm.example.com"
+        assert context is not None
+        return fake_context
+
+    with patch("src.llm_clients.urllib.request.urlopen", side_effect=fake_urlopen):
+        client = OpenAIResponsesLLMClient(
+            base_url="https://203.0.113.10/v1",
+            api_key="key",
+            model="gpt-5.4-mini",
+            transport=HTTPTransportOptions(allow_insecure_tls=True, host_header="llm.example.com"),
+        )
+        result = client.complete_text("system", "user", LLMOptions(max_tokens=42))
+
+    assert result == "ok"
 
 
 def test_factory_creates_anthropic_client():
@@ -277,6 +318,32 @@ def test_list_llm_models_with_base_url_returns_resolved_v1_without_display_mutat
     assert models == ["gpt-a"]
     assert errors == []
     assert base_url == "https://api.example.com/v1"
+
+
+def test_list_llm_models_supports_insecure_host_header_transport():
+    """模型列表请求也应支持 IP + Host header + 跳过证书校验。"""
+    def fake_urlopen(request, timeout, context=None):
+        assert request.full_url == "https://203.0.113.10/v1/models"
+        assert request.headers["Host"] == "llm.example.com"
+        assert context is not None
+        response = MagicMock()
+        response.read.return_value = __import__("json").dumps({
+            "data": [{"id": "gpt-a"}],
+        }).encode("utf-8")
+        context_manager = MagicMock()
+        context_manager.__enter__.return_value = response
+        return context_manager
+
+    with patch("src.llm_clients.urllib.request.urlopen", side_effect=fake_urlopen):
+        models, errors, base_url = list_llm_models_with_base_url(
+            "https://203.0.113.10/v1",
+            "key",
+            transport_options={"allow_insecure_tls": True, "host_header": "llm.example.com"},
+        )
+
+    assert models == ["gpt-a"]
+    assert errors == []
+    assert base_url == "https://203.0.113.10/v1"
 
 
 def test_openai_base_url_candidates_prefer_v1_for_root_endpoint():

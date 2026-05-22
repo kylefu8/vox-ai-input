@@ -8,7 +8,7 @@
 
 Supports mixed Chinese-English recognition, spoken symbol conversion (e.g., "at sign" → @), AI-powered punctuation and grammar correction, and optional real-time translation to 9 languages.
 
-> **v0.0.8: Floating mic + stronger polishing!** Adds a draggable recording control, Chinese/English UI, dark/light theme toggle, selectable polishing API types including OpenAI Responses, and a much stronger default speech cleanup prompt.
+> **v0.0.9: polished floating UI + private gateway support.** Refines the floating mic/result capsules, syncs them with light/dark themes, adds IP/self-signed private gateway compatibility, and hardens Tk/Tcl window handling on Windows.
 
 ## Features
 
@@ -91,7 +91,7 @@ python run.py
 | **Drag floating mic** | Move it; position is saved automatically |
 | **Press Esc while recording** | Cancel current recording |
 | **Tray right-click → Settings** | Open settings window |
-| **Settings top right → Interface/Theme/Info** | Switch UI language, toggle theme, and view app info |
+| **Settings top right → Interface/Theme/Info** | Switch UI language and theme; floating capsules update with it |
 | **Tray right-click → Log** | Open live log window |
 | **Tray right-click → Check Updates** | Check for new GitHub releases |
 
@@ -135,6 +135,7 @@ Edit `config.yaml` (or configure via the settings window on first launch):
 | `ui.language` | Settings/tray UI language: `zh-CN` / `en` | `zh-CN` |
 | `ui.theme` | Settings color theme: `dark` / `light` | `dark` |
 | `ui.floating_control.enabled` | Show the draggable floating mic button | `true` |
+| `ui.preview_overlay.enabled` | Show the result preview capsule | `true` |
 | `stt.backend` | Transcription engine, fixed to local offline | `local` |
 | `stt.model_type` | Local model: `sense_voice`, `whisper_small`, or `paraformer_streaming` | `sense_voice` |
 | `recording.sample_rate` | Sample rate (Hz) | `16000` |
@@ -148,6 +149,8 @@ Edit `config.yaml` (or configure via the settings window on first launch):
 | `llm_profiles.default.provider` | API type: `auto`, `openai_compatible`, `openai_responses`, or `anthropic` | `auto` |
 | `llm_profiles.default.endpoint` | Polishing API endpoint | `""` |
 | `llm_profiles.default.base_url` | Optional resolved runtime API base, usually auto-filled from endpoint | unset |
+| `llm_profiles.default.allow_insecure_tls` | Enable only for trusted private IP/self-signed gateways | `false` |
+| `llm_profiles.default.host_header` | Optional Host header, only when the backend needs the original domain for routing | `""` |
 | `llm_profiles.default.api_key` | Polishing API key | `""` |
 | `llm_profiles.default.model` | Model name | `""` |
 | `history.enabled` | Save recent output history | `true` |
@@ -155,7 +158,7 @@ Edit `config.yaml` (or configure via the settings window on first launch):
 
 ### Polishing API Setup
 
-In Settings, the Polishing page asks for API Type, Endpoint, API Key, and Model. Use `OpenAI Chat Completions` for `/v1/chat/completions`, `OpenAI Responses` for `/v1/responses`, or `Anthropic Messages` for `/v1/messages`; `Auto Detect` is still available. "Fetch models" tries to load model names from the endpoint and can resolve a missing `/v1` in the background. The UI keeps the endpoint you typed; the resolved API base is saved as `base_url` and used at runtime. You can also edit YAML directly:
+In Settings, the Polishing page asks for API Type, Endpoint, API Key, and Model. Use `OpenAI Chat Completions` for `/v1/chat/completions`, `OpenAI Responses` for `/v1/responses`, or `Anthropic Messages` for `/v1/messages`; `Auto Detect` is still available. "Fetch models" tries to load model names from the endpoint and can resolve a missing `/v1` in the background. The UI keeps the endpoint you typed; the resolved API base is saved as `base_url` and used at runtime. If a trusted private gateway is only reachable by IP and uses a self-signed certificate, enable "IP/self-signed mode" in Settings. Host can be left empty; fill it only when the backend needs the original domain for routing. Use this only for gateways you control or trust. You can also edit YAML directly:
 
 ```yaml
 polish:
@@ -167,6 +170,8 @@ llm_profiles:
     provider: "openai_responses"
     endpoint: "https://api.openai.com"
     base_url: "https://api.openai.com/v1"
+    allow_insecure_tls: false
+    host_header: ""
     api_key: "sk-..."
     model: "gpt-5.4-mini"
 ```
@@ -206,7 +211,7 @@ vox-ai-input/
 │   ├── paths.py            # Path utilities (compatible with packaged/source modes)
 │   ├── interfaces.py       # Protocol interface definitions
 │   └── logger.py           # Unified logging (UTF-8 safe)
-├── tests/                  # 170+ test cases
+├── tests/                  # 200+ test cases
 ├── models/                 # Local STT models (user downloads on demand, not in git)
 ├── assets/sounds/          # Recording notification sounds
 ├── scripts/                # Build helper scripts

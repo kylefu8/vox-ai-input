@@ -17,6 +17,7 @@ import platform
 import queue
 import threading
 from src.logger import setup_logger
+from src.tk_runtime import acquire_tk_root, release_tk_root
 
 log = setup_logger(__name__)
 
@@ -56,21 +57,34 @@ class LogWindow:
     """
     实时日志查看窗口。
 
-    在独立线程中运行 tkinter 窗口，通过 queue 接收日志消息。
-    调用 show() 显示窗口，关闭按钮只是隐藏。
+    按需在独立线程中运行 tkinter 窗口，通过 queue 接收日志消息。
+    调用 show() 显示窗口，关闭按钮会释放 Tk，下次打开再重建。
     """
 
     def __init__(self):
-        """初始化并启动后台 tkinter 线程。"""
+        """初始化日志窗口控制器；Tk 线程在首次 show() 时创建。"""
         self._cmd_queue = queue.Queue()
         self._handler = None
-        self._thread = threading.Thread(target=self._tk_thread, daemon=True)
-        self._thread.start()
+        self._thread = None
+        self._thread_lock = threading.Lock()
         self._install_handler()
 
     def show(self):
         """显示日志窗口（如果已隐藏则重新显示）。"""
+        self._ensure_started()
         self._cmd_queue.put((_CMD_SHOW, None))
+
+    def _ensure_started(self):
+        """Start the Tk log window only when the user opens it."""
+        with self._thread_lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._thread = threading.Thread(
+                target=self._tk_thread,
+                daemon=True,
+                name="vox-log-window",
+            )
+            self._thread.start()
 
     def _install_handler(self):
         """
@@ -106,7 +120,11 @@ class LogWindow:
             log.debug("tkinter 不可用，跳过日志窗口")
             return
 
+        root = None
+        guard_acquired = False
         try:
+            acquire_tk_root("log_window")
+            guard_acquired = True
             root = tk.Tk()
             root.title("Vox AI Input — 日志")
             root.geometry("860x480")
@@ -123,8 +141,8 @@ class LogWindow:
             except Exception:
                 pass
 
-            # 关闭按钮 = 隐藏，不退出
-            root.protocol("WM_DELETE_WINDOW", lambda: root.withdraw())
+            # 关闭即销毁，避免隐藏的 Tk root 长期占用进程级 Tk 守卫。
+            root.protocol("WM_DELETE_WINDOW", root.destroy)
             root.withdraw()  # 初始隐藏
 
             # 等宽字体
@@ -236,3 +254,11 @@ class LogWindow:
 
         except Exception as e:
             log.debug("日志窗口异常: %s", e)
+        finally:
+            try:
+                if root and root.winfo_exists():
+                    root.destroy()
+            except Exception:
+                pass
+            if guard_acquired:
+                release_tk_root("log_window")

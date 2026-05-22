@@ -230,13 +230,15 @@ class Recorder:
         self._on_countdown = None
         # 音频 chunk 回调函数（流式转写用）
         self._on_audio_chunk = None
+        # 轻量音量电平回调函数（浮窗/状态反馈用）
+        self._on_level = None
 
     @property
     def is_recording(self):
         """当前是否正在录音。"""
         return self._is_recording
 
-    def start(self, on_auto_stop=None, on_countdown=None, on_audio_chunk=None):
+    def start(self, on_auto_stop=None, on_countdown=None, on_audio_chunk=None, on_level=None):
         """
         开始录音。
 
@@ -245,6 +247,7 @@ class Recorder:
             on_countdown: 可选回调函数(seconds)，倒计时开始时调用
             on_audio_chunk: 可选回调函数(chunk, sample_rate)，每收到一块音频时调用
                            用于流式转写模式，将音频实时喂给转写器
+            on_level: 可选回调函数(level)，每收到一块音频时回传 RMS 音量
 
         Returns:
             bool: 是否成功开始录音
@@ -260,6 +263,7 @@ class Recorder:
                 self._on_auto_stop = on_auto_stop
                 self._on_countdown = on_countdown
                 self._on_audio_chunk = on_audio_chunk
+                self._on_level = on_level
 
                 # 创建音频输入流（回调模式）
                 self._stream = sd.InputStream(
@@ -400,6 +404,13 @@ class Recorder:
         if self._on_audio_chunk:
             try:
                 self._on_audio_chunk(chunk, self.sample_rate)
+            except Exception:
+                pass  # 音频回调中绝不能抛异常
+
+        if self._on_level:
+            try:
+                rms = float(np.sqrt(np.mean(chunk * chunk)))
+                self._on_level(rms)
             except Exception:
                 pass  # 音频回调中绝不能抛异常
 

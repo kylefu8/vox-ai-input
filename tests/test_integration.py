@@ -74,11 +74,13 @@ def _make_app():
          patch("src.local_transcriber.LocalTranscriber") as mock_local_transcriber_cls, \
          patch("src.azure_client.AzureOpenAI"), \
          patch("src.app.create_default_sounds"), \
-         patch("src.app.TrayIcon") as mock_tray_cls:
+         patch("src.app.TrayIcon") as mock_tray_cls, \
+         patch("src.app.FloatingControl") as mock_floating_cls:
 
         # TrayIcon mock
         mock_tray = MagicMock()
         mock_tray_cls.return_value = mock_tray
+        mock_floating_cls.return_value = MagicMock()
         mock_local_transcriber_cls.return_value = MagicMock()
 
         from src.app import AIInputApp
@@ -102,6 +104,7 @@ class TestFullPipeline:
              patch("src.app.play_start_sound"):
             app._on_hotkey_press()
             mock_start.assert_called_once()
+            assert mock_start.call_args.kwargs["on_level"] == app._on_audio_level
 
     def test_hotkey_press_sets_tray_recording(self):
         """按下热键应该将托盘图标设为录音状态。"""
@@ -139,6 +142,29 @@ class TestFullPipeline:
 
         app._tray.set_state.assert_called_with("recording")
         app._floating.set_state.assert_called_once_with("recording", message=None)
+
+    def test_activity_state_updates_floating_before_tray(self):
+        """悬浮按钮是主视觉反馈，应先于托盘更新。"""
+        app = _make_app()
+        calls = []
+
+        app._floating = MagicMock()
+        app._floating.set_state.side_effect = lambda *_args, **_kwargs: calls.append("floating")
+        app._tray.set_state.side_effect = lambda *_args, **_kwargs: calls.append("tray")
+
+        app._set_activity_state("idle")
+
+        assert calls == ["floating", "tray"]
+
+    def test_activity_state_updates_floating_even_if_tray_fails(self):
+        """托盘异常不应阻止悬浮按钮回到正确状态。"""
+        app = _make_app()
+        app._floating = MagicMock()
+        app._tray.set_state.side_effect = RuntimeError("tray failed")
+
+        app._set_activity_state("idle")
+
+        app._floating.set_state.assert_called_once_with("idle", message=None)
 
     def test_floating_toggle_starts_recording_when_idle(self):
         """空闲时点击悬浮按钮应开始录音。"""
@@ -622,6 +648,30 @@ class TestHotReload:
             theme="light",
             language="en",
         )
+
+    def test_runtime_theme_preview_updates_floating_and_preview(self):
+        """设置窗口切换主题时，常驻胶囊应立即同步但不直接写配置。"""
+        app = _make_app()
+        app._floating = MagicMock()
+        app._preview = MagicMock()
+
+        app._apply_runtime_theme("light")
+
+        app._preview.configure.assert_called_once_with(
+            theme="light",
+            anchor_provider=app._get_floating_preview_anchor,
+        )
+        app._floating.configure.assert_called_once_with(theme="light", language="zh-CN")
+        assert app._config.get("ui", {}).get("theme") is None
+
+    def test_open_settings_wires_runtime_theme_callback(self):
+        """设置窗口主题按钮应能通知主应用同步常驻胶囊。"""
+        app = _make_app()
+
+        with patch("src.app.open_settings") as mock_open_settings:
+            app._open_settings()
+
+        assert mock_open_settings.call_args.kwargs["on_theme_change"] == app._apply_runtime_theme
 
     def test_reload_config_clears_client_cache(self):
         """热重载应该清除旧的 Azure 客户端缓存。"""

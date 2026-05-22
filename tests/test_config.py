@@ -20,6 +20,7 @@ from src.config import (
     get_polish_config,
     get_ui_config,
     get_floating_control_config,
+    get_preview_overlay_config,
 )
 
 
@@ -185,6 +186,24 @@ class TestGetFloatingControlConfig:
         assert result["enabled"] is False
         assert result["x"] == 120
         assert result["y"] == 240
+
+
+class TestGetPreviewOverlayConfig:
+    """结果预览胶囊配置提取测试。"""
+
+    def test_defaults_to_enabled(self):
+        result = get_preview_overlay_config({})
+        assert result["enabled"] is True
+
+    def test_extracts_enabled(self):
+        result = get_preview_overlay_config({
+            "ui": {
+                "preview_overlay": {
+                    "enabled": False,
+                }
+            }
+        })
+        assert result["enabled"] is False
 
 
 class TestGetLLMProfileConfig:

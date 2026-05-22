@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Protocol
 
+import httpx
 from openai import OpenAI
 
 from src.azure_client import get_azure_client
@@ -35,6 +37,14 @@ class LLMOptions:
 
     max_tokens: int = 1024
     temperature: float = 0.0
+
+
+@dataclass(frozen=True)
+class HTTPTransportOptions:
+    """Optional low-level HTTP settings for private gateways."""
+
+    allow_insecure_tls: bool = False
+    host_header: str = ""
 
 
 class LLMClientProtocol(Protocol):
@@ -61,6 +71,7 @@ class AzureOpenAILLMClient:
         deployment: str,
         timeout: float = 60.0,
         max_retries: int = 0,
+        transport: HTTPTransportOptions | None = None,
     ):
         self.model_name = deployment
         self.client = get_azure_client(
@@ -69,6 +80,7 @@ class AzureOpenAILLMClient:
             api_version=api_version,
             timeout=timeout,
             max_retries=max_retries,
+            transport=transport,
         )
 
     def complete_text(self, system_prompt: str, user_prompt: str, options: LLMOptions) -> str:
@@ -98,13 +110,27 @@ class OpenAICompatibleLLMClient:
         model: str,
         timeout: float = 60.0,
         max_retries: int = 0,
+        transport: HTTPTransportOptions | None = None,
     ):
         self.model_name = model
+        transport = transport or HTTPTransportOptions()
+        client_kwargs = {
+            "base_url": base_url.rstrip("/") if base_url else DEFAULT_OPENAI_BASE_URL,
+            "api_key": api_key,
+            "timeout": timeout,
+            "max_retries": max_retries,
+        }
+        if _needs_custom_http_client(transport):
+            headers = {}
+            if transport.host_header:
+                headers["Host"] = transport.host_header
+            client_kwargs["http_client"] = httpx.Client(
+                verify=_httpx_verify_value(transport),
+                headers=headers or None,
+                timeout=timeout,
+            )
         self.client = OpenAI(
-            base_url=base_url.rstrip("/") if base_url else DEFAULT_OPENAI_BASE_URL,
-            api_key=api_key,
-            timeout=timeout,
-            max_retries=max_retries,
+            **client_kwargs,
         )
 
     def complete_text(self, system_prompt: str, user_prompt: str, options: LLMOptions) -> str:
@@ -137,12 +163,14 @@ class OpenAIResponsesLLMClient:
         model: str,
         timeout: float = 60.0,
         max_retries: int = 0,
+        transport: HTTPTransportOptions | None = None,
     ):
         self.base_url = (base_url or DEFAULT_OPENAI_BASE_URL).rstrip("/")
         self.api_key = api_key
         self.model_name = model
         self.timeout = timeout
         self.max_retries = max_retries
+        self.transport = transport or HTTPTransportOptions()
 
     def complete_text(self, system_prompt: str, user_prompt: str, options: LLMOptions) -> str:
         payload = {
@@ -163,6 +191,7 @@ class OpenAIResponsesLLMClient:
             headers={
                 "content-type": "application/json",
                 "authorization": f"Bearer {self.api_key}",
+                **_transport_headers(self.transport),
             },
         )
 
@@ -170,7 +199,7 @@ class OpenAIResponsesLLMClient:
         last_error = None
         for _ in range(attempts):
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                with _urlopen(req, timeout=self.timeout, transport=self.transport) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                 return _extract_openai_responses_text(data)
             except urllib.error.HTTPError as e:
@@ -196,6 +225,7 @@ class AnthropicLLMClient:
         api_version: str = DEFAULT_ANTHROPIC_VERSION,
         timeout: float = 60.0,
         max_retries: int = 0,
+        transport: HTTPTransportOptions | None = None,
     ):
         self.base_url = (base_url or "https://api.anthropic.com").rstrip("/")
         self.api_key = api_key
@@ -203,6 +233,7 @@ class AnthropicLLMClient:
         self.model_name = model
         self.timeout = timeout
         self.max_retries = max_retries
+        self.transport = transport or HTTPTransportOptions()
 
     def complete_text(self, system_prompt: str, user_prompt: str, options: LLMOptions) -> str:
         payload = {
@@ -221,6 +252,7 @@ class AnthropicLLMClient:
                 "content-type": "application/json",
                 "x-api-key": self.api_key,
                 "anthropic-version": self.api_version,
+                **_transport_headers(self.transport),
             },
         )
 
@@ -228,7 +260,7 @@ class AnthropicLLMClient:
         last_error = None
         for _ in range(attempts):
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                with _urlopen(req, timeout=self.timeout, transport=self.transport) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                 return _extract_anthropic_text(data)
             except urllib.error.HTTPError as e:
@@ -248,6 +280,7 @@ def create_llm_client(profile: dict) -> LLMClientProtocol:
     max_retries = int(profile.get("max_retries", 0))
     endpoint = _profile_endpoint(profile)
     model = _profile_model(profile)
+    transport = _transport_options_from_profile(profile)
 
     if provider == "azure_openai":
         return AzureOpenAILLMClient(
@@ -257,6 +290,7 @@ def create_llm_client(profile: dict) -> LLMClientProtocol:
             deployment=model,
             timeout=timeout,
             max_retries=max_retries,
+            transport=transport,
         )
 
     if provider == "openai_compatible":
@@ -266,6 +300,7 @@ def create_llm_client(profile: dict) -> LLMClientProtocol:
             model=model,
             timeout=timeout,
             max_retries=max_retries,
+            transport=transport,
         )
 
     if provider == "openai_responses":
@@ -275,6 +310,7 @@ def create_llm_client(profile: dict) -> LLMClientProtocol:
             model=model,
             timeout=timeout,
             max_retries=max_retries,
+            transport=transport,
         )
 
     if provider == "anthropic":
@@ -285,6 +321,7 @@ def create_llm_client(profile: dict) -> LLMClientProtocol:
             api_version=profile.get("api_version", DEFAULT_ANTHROPIC_VERSION),
             timeout=timeout,
             max_retries=max_retries,
+            transport=transport,
         )
 
     raise ValueError(f"不支持的 LLM provider: {provider}")
@@ -317,7 +354,12 @@ def validate_llm_profile(profile: dict) -> str:
     return result
 
 
-def detect_llm_profile(endpoint: str, api_key: str, model: str) -> tuple[dict, str, list[str]]:
+def detect_llm_profile(
+    endpoint: str,
+    api_key: str,
+    model: str,
+    transport_options: dict | None = None,
+) -> tuple[dict, str, list[str]]:
     """
     Try common provider protocols and return the first working profile.
 
@@ -333,7 +375,7 @@ def detect_llm_profile(endpoint: str, api_key: str, model: str) -> tuple[dict, s
         RuntimeError: when no candidate works. The error message includes
         per-provider details so the UI can show an actionable failure.
     """
-    candidates = _build_detection_candidates(endpoint, api_key, model)
+    candidates = _build_detection_candidates(endpoint, api_key, model, transport_options=transport_options)
     errors: list[str] = []
 
     for label, profile in candidates:
@@ -352,13 +394,20 @@ def validate_llm_profile_for_provider(
     endpoint: str,
     api_key: str,
     model: str,
+    transport_options: dict | None = None,
 ) -> tuple[dict, str, list[str]]:
     """Validate a user-selected API type without falling back to another type."""
     provider = (provider or "auto").strip()
     if provider == "auto":
-        return detect_llm_profile(endpoint, api_key, model)
+        return detect_llm_profile(endpoint, api_key, model, transport_options=transport_options)
 
-    candidates = _build_provider_candidates(provider, endpoint, api_key, model)
+    candidates = _build_provider_candidates(
+        provider,
+        endpoint,
+        api_key,
+        model,
+        transport_options=transport_options,
+    )
     errors: list[str] = []
     for label, profile in candidates:
         try:
@@ -376,7 +425,11 @@ def list_llm_models(endpoint: str, api_key: str) -> tuple[list[str], list[str]]:
     return models, errors
 
 
-def list_llm_models_with_base_url(endpoint: str, api_key: str) -> tuple[list[str], list[str], str | None]:
+def list_llm_models_with_base_url(
+    endpoint: str,
+    api_key: str,
+    transport_options: dict | None = None,
+) -> tuple[list[str], list[str], str | None]:
     """
     Try to fetch model/deployment names from a user-entered endpoint.
 
@@ -388,6 +441,7 @@ def list_llm_models_with_base_url(endpoint: str, api_key: str) -> tuple[list[str
     api_key = (api_key or "").strip()
     models: list[str] = []
     errors: list[str] = []
+    transport = _transport_options_from_profile(transport_options or {})
 
     if not endpoint:
         return [], ["Endpoint 为空"], None
@@ -398,9 +452,12 @@ def list_llm_models_with_base_url(endpoint: str, api_key: str) -> tuple[list[str
         try:
             req = urllib.request.Request(
                 f"{base_url.rstrip('/')}/models",
-                headers={"Authorization": f"Bearer {api_key}"},
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    **_transport_headers(transport),
+                },
             )
-            with urllib.request.urlopen(req, timeout=12) as resp:
+            with _urlopen(req, timeout=12, transport=transport) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             values = [item.get("id", "") for item in data.get("data", []) if item.get("id")]
             if values:
@@ -418,8 +475,14 @@ def list_llm_models_with_base_url(endpoint: str, api_key: str) -> tuple[list[str
 
     try:
         azure_url = f"{endpoint}/openai/deployments?api-version=2022-12-01"
-        req = urllib.request.Request(azure_url, headers={"api-key": api_key})
-        with urllib.request.urlopen(req, timeout=12) as resp:
+        req = urllib.request.Request(
+            azure_url,
+            headers={
+                "api-key": api_key,
+                **_transport_headers(transport),
+            },
+        )
+        with _urlopen(req, timeout=12, transport=transport) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         values = [item.get("id", "") for item in data.get("data", []) if item.get("id")]
         models.extend(values)
@@ -435,9 +498,10 @@ def list_llm_models_with_base_url(endpoint: str, api_key: str) -> tuple[list[str
             headers={
                 "x-api-key": api_key,
                 "anthropic-version": DEFAULT_ANTHROPIC_VERSION,
+                **_transport_headers(transport),
             },
         )
-        with urllib.request.urlopen(req, timeout=12) as resp:
+        with _urlopen(req, timeout=12, transport=transport) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         values = [item.get("id", "") for item in data.get("data", []) if item.get("id")]
         models.extend(values)
@@ -482,7 +546,12 @@ def _resolve_api_key(profile: dict) -> str:
     return profile.get("api_key", "")
 
 
-def _build_detection_candidates(endpoint: str, api_key: str, model: str) -> list[tuple[str, dict]]:
+def _build_detection_candidates(
+    endpoint: str,
+    api_key: str,
+    model: str,
+    transport_options: dict | None = None,
+) -> list[tuple[str, dict]]:
     endpoint = (endpoint or "").strip().rstrip("/")
     api_key = (api_key or "").strip()
     model = (model or "").strip()
@@ -491,16 +560,40 @@ def _build_detection_candidates(endpoint: str, api_key: str, model: str) -> list
     candidates: list[tuple[str, dict]] = []
 
     def add_openai():
-        candidates.extend(_build_provider_candidates("openai_compatible", endpoint, api_key, model))
+        candidates.extend(_build_provider_candidates(
+            "openai_compatible",
+            endpoint,
+            api_key,
+            model,
+            transport_options=transport_options,
+        ))
 
     def add_responses():
-        candidates.extend(_build_provider_candidates("openai_responses", endpoint, api_key, model))
+        candidates.extend(_build_provider_candidates(
+            "openai_responses",
+            endpoint,
+            api_key,
+            model,
+            transport_options=transport_options,
+        ))
 
     def add_anthropic():
-        candidates.extend(_build_provider_candidates("anthropic", endpoint, api_key, model))
+        candidates.extend(_build_provider_candidates(
+            "anthropic",
+            endpoint,
+            api_key,
+            model,
+            transport_options=transport_options,
+        ))
 
     def add_azure():
-        candidates.extend(_build_provider_candidates("azure_openai", endpoint, api_key, model))
+        candidates.extend(_build_provider_candidates(
+            "azure_openai",
+            endpoint,
+            api_key,
+            model,
+            transport_options=transport_options,
+        ))
 
     if "anthropic" in endpoint_l:
         add_anthropic()
@@ -536,16 +629,22 @@ def _build_provider_candidates(
     endpoint: str,
     api_key: str,
     model: str,
+    transport_options: dict | None = None,
 ) -> list[tuple[str, dict]]:
     endpoint = (endpoint or "").strip().rstrip("/")
     api_key = (api_key or "").strip()
     model = (model or "").strip()
+    transport_fields = _transport_profile_fields(transport_options or {})
+
+    def with_transport(profile: dict) -> dict:
+        profile.update(transport_fields)
+        return profile
 
     if provider == "openai_compatible":
         return [
             (
                 f"OpenAI Chat Completions ({base_url})",
-                {
+                with_transport({
                     "provider": "openai_compatible",
                     "endpoint": endpoint,
                     "base_url": base_url,
@@ -553,7 +652,7 @@ def _build_provider_candidates(
                     "model": model,
                     "timeout": 20,
                     "max_retries": 0,
-                },
+                }),
             )
             for base_url in _openai_base_url_candidates(endpoint)
         ]
@@ -562,7 +661,7 @@ def _build_provider_candidates(
         return [
             (
                 f"OpenAI Responses ({base_url})",
-                {
+                with_transport({
                     "provider": "openai_responses",
                     "endpoint": endpoint,
                     "base_url": base_url,
@@ -570,7 +669,7 @@ def _build_provider_candidates(
                     "model": model,
                     "timeout": 20,
                     "max_retries": 0,
-                },
+                }),
             )
             for base_url in _openai_base_url_candidates(endpoint)
         ]
@@ -578,7 +677,7 @@ def _build_provider_candidates(
     if provider == "anthropic":
         return [(
             "Anthropic Messages API",
-            {
+            with_transport({
                 "provider": "anthropic",
                 "endpoint": endpoint or "https://api.anthropic.com",
                 "base_url": endpoint or "https://api.anthropic.com",
@@ -587,13 +686,13 @@ def _build_provider_candidates(
                 "model": model,
                 "timeout": 20,
                 "max_retries": 0,
-            },
+            }),
         )]
 
     if provider == "azure_openai":
         return [(
             "Azure OpenAI",
-            {
+            with_transport({
                 "provider": "azure_openai",
                 "endpoint": endpoint,
                 "api_key": api_key,
@@ -602,7 +701,7 @@ def _build_provider_candidates(
                 "deployment": model,
                 "timeout": 20,
                 "max_retries": 0,
-            },
+            }),
         )]
 
     return []
@@ -617,6 +716,64 @@ def _openai_base_url_candidates(endpoint: str) -> list[str]:
         candidates.append(f"{endpoint}/v1")
         candidates.append(endpoint)
     return candidates
+
+
+def _bool_from_profile(value, default=True) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in ("0", "false", "no", "off"):
+        return False
+    if text in ("1", "true", "yes", "on"):
+        return True
+    return default
+
+
+def _transport_options_from_profile(profile: dict) -> HTTPTransportOptions:
+    profile = profile or {}
+    return HTTPTransportOptions(
+        allow_insecure_tls=_bool_from_profile(profile.get("allow_insecure_tls"), False),
+        host_header=str(profile.get("host_header") or "").strip(),
+    )
+
+
+def _transport_profile_fields(profile: dict) -> dict:
+    options = _transport_options_from_profile(profile)
+    fields = {}
+    if options.allow_insecure_tls:
+        fields["allow_insecure_tls"] = True
+    if options.host_header:
+        fields["host_header"] = options.host_header
+    return fields
+
+
+def _transport_headers(transport: HTTPTransportOptions) -> dict[str, str]:
+    return {"Host": transport.host_header} if transport.host_header else {}
+
+
+def _ssl_context(transport: HTTPTransportOptions):
+    if transport.allow_insecure_tls:
+        return ssl._create_unverified_context()
+    return None
+
+
+def _urlopen(req, timeout: float, transport: HTTPTransportOptions):
+    context = _ssl_context(transport)
+    if context is not None:
+        return urllib.request.urlopen(req, timeout=timeout, context=context)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def _httpx_verify_value(transport: HTTPTransportOptions):
+    if transport.allow_insecure_tls:
+        return False
+    return True
+
+
+def _needs_custom_http_client(transport: HTTPTransportOptions) -> bool:
+    return transport.allow_insecure_tls or bool(transport.host_header)
 
 
 def _extract_anthropic_text(data: dict) -> str:

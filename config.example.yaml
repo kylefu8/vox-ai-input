@@ -10,9 +10,12 @@ ui:
     # 屏幕悬浮录音按钮
     floating_control:
         enabled: true
-        # x/y 会在拖动后自动保存；留空则默认显示在屏幕右侧
+        # x/y 会在拖动后自动保存为空闲小圆位置；留空则默认显示在屏幕右侧
         x:
         y:
+    # 结果预览胶囊（跟随悬浮按钮下方；展示转写/润色状态和最终结果）
+    preview_overlay:
+        enabled: true
 
 # 转写引擎设置
 stt:
@@ -61,6 +64,8 @@ llm_profiles:
         provider: "auto"
         endpoint: ""
         # base_url: ""  # 可选：后台解析后的实际 API base，不在设置窗口里显示
+        # allow_insecure_tls: true # 可选：可信私有网关使用 IP/自签名直连时启用
+        # host_header: ""          # 可选：仅当后端需要原域名路由时填写，例如 llm.example.com
         api_key: ""
         model: ""
 

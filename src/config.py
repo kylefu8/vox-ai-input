@@ -256,6 +256,20 @@ def get_floating_control_config(config):
     }
 
 
+def get_preview_overlay_config(config):
+    """
+    从配置字典中提取结果预览胶囊配置。
+
+    预览胶囊用于展示流式转写中间文本、转写/润色状态和最终结果。
+    视觉上与悬浮录音按钮保持一致，默认开启；需要极简模式时可关闭。
+    """
+    ui = config.get("ui", {}) or {}
+    preview = ui.get("preview_overlay", {}) or {}
+    return {
+        "enabled": bool(preview.get("enabled", True)),
+    }
+
+
 def get_llm_profile_config(config, profile_name=None):
     """
     返回当前润色 LLM profile。

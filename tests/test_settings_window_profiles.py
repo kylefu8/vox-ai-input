@@ -4,7 +4,9 @@
 
 import pytest
 
+import src.settings_window as settings_window
 from src.settings_window import (
+    SettingsWindow,
     _button_width,
     _default_llm_profile,
     _icon_text,
@@ -78,3 +80,39 @@ def test_hotkey_warning_flags_alt_z():
 
 def test_hotkey_warning_allows_recommended_default():
     assert _hotkey_warning_text("ctrl+shift+space") == ""
+
+
+def test_unsaved_theme_preview_reverts_on_close():
+    calls = []
+    window = SettingsWindow.__new__(SettingsWindow)
+    window._on_theme_change = calls.append
+    window._initial_theme = "dark"
+    window._theme_saved = False
+    window._root = type("Root", (), {"destroy": lambda self: None})()
+
+    previous = settings_window._current_theme
+    try:
+        settings_window._set_current_theme("light")
+        window._on_close()
+    finally:
+        settings_window._set_current_theme(previous)
+
+    assert calls == ["dark"]
+
+
+def test_saved_theme_preview_does_not_revert_on_close():
+    calls = []
+    window = SettingsWindow.__new__(SettingsWindow)
+    window._on_theme_change = calls.append
+    window._initial_theme = "dark"
+    window._theme_saved = True
+    window._root = type("Root", (), {"destroy": lambda self: None})()
+
+    previous = settings_window._current_theme
+    try:
+        settings_window._set_current_theme("light")
+        window._on_close()
+    finally:
+        settings_window._set_current_theme(previous)
+
+    assert calls == []
