@@ -2,8 +2,7 @@
 ;
 ; 用法（需先安装 Inno Setup 6）:
 ;   1. pyinstaller build.spec --clean --noconfirm
-;   2. python scripts/post_build.py
-;   3. iscc installer.iss
+;   2. iscc installer.iss
 ;
 ; 产物: release/VoxAIInput-Setup-{version}.exe
 

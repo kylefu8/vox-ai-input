@@ -31,7 +31,7 @@ def _valid_llm_profiles():
             "endpoint": "https://test.openai.azure.com/",
             "api_key": "real-key-abc123",
             "api_version": "2025-01-01-preview",
-            "deployment": "gpt-5.4-nano",
+            "deployment": "gpt-5.4-mini",
         }
     }
 
@@ -220,7 +220,7 @@ class TestGetLLMProfileConfig:
         config = {"polish": {"profile": "azure"}, "llm_profiles": _valid_llm_profiles()}
         result = get_llm_profile_config(config)
         assert result["provider"] == "azure_openai"
-        assert result["deployment"] == "gpt-5.4-nano"
+        assert result["deployment"] == "gpt-5.4-mini"
 
     def test_named_anthropic_profile(self):
         """应该按名称提取 Anthropic profile。"""
@@ -269,7 +269,7 @@ class TestLoadConfig:
             "    provider: azure_openai\n"
             "    endpoint: https://test.openai.azure.com/\n"
             "    api_key: real-key-123\n"
-            "    deployment: gpt-5.4-nano\n",
+            "    deployment: gpt-5.4-mini\n",
             encoding="utf-8",
         )
         with patch("src.config.CONFIG_PATH", config_file):
@@ -337,7 +337,7 @@ class TestSaveConfig:
                     "provider": "azure_openai",
                     "endpoint": "",
                     "api_key": "key",
-                    "deployment": "gpt-5.4-nano",
+                    "deployment": "gpt-5.4-mini",
                 }
             },
         }
@@ -353,7 +353,7 @@ class TestSaveConfig:
                     "provider": "azure_openai",
                     "endpoint": "https://test.openai.azure.com/",
                     "api_key": "  ",
-                    "deployment": "gpt-5.4-nano",
+                    "deployment": "gpt-5.4-mini",
                 }
             },
         }

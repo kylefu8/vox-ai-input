@@ -10,7 +10,7 @@ Vox AI Input — PyInstaller 打包配置
     dist/VoxAIInput/（目录模式，含 VoxAIInput.exe + _internal/）
 
     后续步骤:
-    1. python scripts/post_build.py  — 生成 app-update.zip + update-manifest.json
+    1. Compress-Archive dist/VoxAIInput/* 为便携 zip（CI 自动完成）
     2. iscc installer.iss            — 生成 Inno Setup 安装包
 """
 
@@ -62,7 +62,7 @@ a = Analysis(
 pyz = PYZ(a.pure)
 
 # --onedir 模式：exe + _internal/ 目录
-# 相比 --onefile：启动更快（不需解压），支持增量更新
+# 相比 --onefile：启动更快（不需解压），也便于生成便携 zip 和安装包。
 exe = EXE(
     pyz,
     a.scripts,

@@ -33,7 +33,7 @@ def test_factory_creates_azure_client():
             "endpoint": "https://test.openai.azure.com/",
             "api_key": "key",
             "api_version": "2025-01-01-preview",
-            "deployment": "gpt-5.4-nano",
+            "deployment": "gpt-5.4-mini",
         })
     assert isinstance(client, AzureOpenAILLMClient)
 
@@ -68,11 +68,11 @@ def test_factory_accepts_generic_azure_profile():
             "provider": "azure_openai",
             "endpoint": "https://test.openai.azure.com/",
             "api_key": "key",
-            "model": "gpt-5.4-nano",
+            "model": "gpt-5.4-mini",
         })
 
     assert isinstance(client, AzureOpenAILLMClient)
-    assert client.model_name == "gpt-5.4-nano"
+    assert client.model_name == "gpt-5.4-mini"
     assert factory.call_args.kwargs["api_version"] == "2025-01-01-preview"
 
 

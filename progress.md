@@ -245,3 +245,8 @@
 - 发布收口：将 `run.py` 和 `installer.iss` 版本号更新为 `0.0.9`，新增 `_release_note_v0.0.9.md`，README / README_zh 顶部版本摘要更新为 v0.0.9。
 - 按用户要求完成隐私收口：项目记录、评测样例和测试中的真实私有 provider 域名/IP 已替换为 `llm.example.com`、`203.0.113.10` 等文档占位值；`config.yaml` 未进入待提交列表。
 - 发布前验证通过：`.venv\Scripts\python.exe -m compileall -q run.py src tests`；全量测试 `214 passed in 9.01s`。
+- 开始仓库过时内容清理：确认 `scripts/post_build.py` 已不被当前 GitHub Actions/release 流程调用，当前 CI 直接生成便携 zip、安装包和 `update-manifest.json`，旧 `app-update.zip` 只作为 `updater.py` 的历史兼容路径保留。
+- 删除旧 `scripts/post_build.py`，并更新 `build.spec`、`installer.iss`、`src/updater.py` 的发布/更新说明，避免继续引导生成已不发布的增量包。
+- 更新过时但仍有用的文档：`CLAUDE.md` 改为指向 `AGENTS.md` 的当前代理入口说明，`UI_STYLE_GUIDE.md` 改为当前 Tk 设置窗口 + Win32 layered 悬浮胶囊体系，README / README_zh 对齐 Python 3.12、bootstrap 脚本和当前 UI 栈。
+- 对齐当前项目约定：GitHub Actions 构建 Python 从 3.11 改为 3.12；Azure profile fallback 和相关测试中的旧 `gpt-5.4-nano` 改为推荐默认 `gpt-5.4-mini`；`task_plan.md` 移除已完成的旧“下一阶段”计划并改成当前后续建议。
+- 清理验证通过：隐私关键字扫描未命中（排除 `config.yaml`、`data/`、`models/`、`.venv/`）；`.venv\Scripts\python.exe -m compileall -q run.py src tests` 通过；受影响测试 `72 passed in 1.47s`；全量测试 `214 passed in 8.75s`；`git diff --check` 无 whitespace 错误。

@@ -94,3 +94,6 @@
 - 后台线程里为了弹一个消息框临时创建 `tk.Tk()` 是高风险模式，尤其会和设置窗口、日志窗口等长期 Tk mainloop 并存；Windows 上应优先使用原生 `MessageBoxW`，非 Windows fallback 再进入 Tk 守卫。
 - 长期隐藏但不销毁的 Tk 窗口会让进程级 Tk 守卫变成新的阻塞点；日志类辅助窗口更适合关闭即销毁，下次打开再重建。
 - 设置窗口在等待 Tk 守卫前就应标记 `_settings_open`，否则连续点击可能排出多个等待线程，等守卫释放后再依次创建多个设置窗口。
+- `scripts/post_build.py` 已脱离当前发布链路：GitHub Actions 直接生成 `VoxAIInput-*-win64.zip`、安装包和 `update-manifest.json`，release 不再发布 `app-update.zip`。旧增量更新逻辑可以留在 `src/updater.py` 做历史兼容，但脚本和构建说明不应继续作为当前步骤出现。
+- 历史 release note 中的旧模型名应保留为历史记录；当前可执行代码、示例和测试里的默认/推荐模型应统一到 `gpt-5.4-mini`，避免新建 profile 时继续带出旧默认。
+- 项目记忆文件本身也会过时：`task_plan.md` 里已经完成的评测/悬浮控制“下一阶段计划”如果不改，会误导后续 session 以为这些仍待执行；完成后应替换为新的后续建议。

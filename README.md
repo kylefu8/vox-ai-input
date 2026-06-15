@@ -66,19 +66,14 @@ Supports mixed Chinese-English recognition, spoken symbol conversion (e.g., "at 
 git clone https://github.com/kylefu8/vox-ai-input.git
 cd vox-ai-input
 
-# Virtual environment
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-
-# Install dependencies
-pip install -r requirements.txt
+# Bootstrap local Python 3.12 environment and dependencies
+.\scripts\bootstrap_dev.ps1 -SkipVerify
 
 # Configure
-Copy-Item config.example.yaml config.yaml
 # Edit config.yaml with your settings
 
 # Run
-python run.py
+.\.venv\Scripts\python.exe run.py
 ```
 
 ## Usage
@@ -262,13 +257,13 @@ This repo includes `AGENTS.md` as persistent project context for fresh Codex ses
 
 ## Tech Stack
 
-- **Language**: Python 3.10+
+- **Language**: Python 3.12
 - **Speech-to-text**: Local sherpa-onnx (SenseVoice / Whisper Small / Paraformer)
 - **Text polishing + translation**: Azure OpenAI / OpenAI-compatible / Anthropic
 - **Hotkey listener**: pynput
 - **Recording**: sounddevice + soundfile
-- **UI**: tkinter (settings, log window, floating control) + pystray (system tray)
-- **Countdown overlay**: Win32 Layered Window (per-pixel alpha transparency)
+- **UI**: Tkinter (settings/log), Win32 layered floating capsules, and pystray (system tray)
+- **Floating overlays**: Win32 Layered Window first, Tk fallback only
 - **Packaging**: PyInstaller (--onedir) + Inno Setup (installer)
 - **CI/CD**: GitHub Actions
 

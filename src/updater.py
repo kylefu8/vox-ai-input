@@ -1,15 +1,16 @@
 """
 一键升级模块
 
-通过 GitHub Releases API 检查版本更新，支持两种更新模式：
+通过 GitHub Releases API 检查版本更新。
 
-1. 增量更新（优先）：下载 app-update.zip（~100KB），只替换应用代码
-2. 全量更新（回退）：下载安装包 VoxAIInput-Setup-*.exe 并运行
+当前 release 流程发布安装包、便携 zip 和 update-manifest.json；应用内更新默认
+下载安装包 VoxAIInput-Setup-*.exe 并运行。历史版本曾发布 app-update.zip 增量包，
+运行时仍保留兼容路径：只有 Release 同时包含 app-update.zip 和 manifest 时才使用。
 
 流程：
 1. checkForUpdates() — 查询 GitHub 最新 Release + update-manifest.json
 2. downloadUpdate() — 下载增量包或安装包
-3. applyUpdate() — 解压覆盖 _internal/ 或运行安装包，然后重启
+3. applyUpdate() — 运行安装包；旧增量包则解压覆盖 _internal/ 后重启
 """
 
 import hashlib
@@ -159,8 +160,8 @@ class Updater:
         ready → (apply and restart)
 
     更新模式：
-        lightweight: 仅替换 _internal/src/ 等应用文件（~100KB）
-        full: 运行安装包（~30MB）
+        lightweight: 兼容旧 app-update.zip 增量包（当前 CI 不再生成）
+        full: 运行安装包
     """
 
     def __init__(self):
@@ -238,9 +239,10 @@ class Updater:
 
     def _determine_update_mode(self, assets):
         """
-        根据 release assets 判断使用增量还是全量更新。
+        根据 release assets 判断使用旧增量包还是当前全量安装包。
 
-        优先增量（如果有 app-update.zip + manifest），否则全量。
+        只有历史 release 同时提供 app-update.zip + manifest 时才走增量，
+        当前 CI 生成的是 installer/portable zip/manifest，应用内更新使用安装包。
         """
         asset_map = {a["name"]: a for a in assets}
 

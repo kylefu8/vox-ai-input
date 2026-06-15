@@ -66,19 +66,14 @@
 git clone https://github.com/kylefu8/vox-ai-input.git
 cd vox-ai-input
 
-# 虚拟环境
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-
-# 安装依赖
-pip install -r requirements.txt
+# 初始化本地 Python 3.12 环境和依赖
+.\scripts\bootstrap_dev.ps1 -SkipVerify
 
 # 配置
-Copy-Item config.example.yaml config.yaml
 # 编辑 config.yaml，填入你的设置
 
 # 启动
-python run.py
+.\.venv\Scripts\python.exe run.py
 ```
 
 ## 使用方法
@@ -264,13 +259,13 @@ pyinstaller build.spec --clean --noconfirm
 
 ## 技术栈
 
-- **语言**: Python 3.10+
+- **语言**: Python 3.12
 - **语音转写**: 本地 sherpa-onnx（SenseVoice / Whisper Small / Paraformer）
 - **文字润色 + 翻译**: Azure OpenAI / OpenAI-compatible / Anthropic
 - **热键监听**: pynput
 - **录音**: sounddevice + soundfile
-- **UI**: tkinter（设置窗口、日志窗口、悬浮按钮）+ pystray（系统托盘）
-- **倒计时浮窗**: Win32 Layered Window（逐像素 Alpha 透明）
+- **UI**: Tkinter（设置/日志）、Win32 layered 悬浮胶囊和 pystray（系统托盘）
+- **悬浮层**: Windows 优先使用 Win32 Layered Window，Tk 仅作 fallback
 - **打包**: PyInstaller（--onedir）+ Inno Setup（安装包）
 - **CI/CD**: GitHub Actions
 

@@ -1,8 +1,8 @@
 """
-设置窗口模块（现代深色主题）
+设置窗口模块（深浅色主题）
 
 基于 tkinter 的设置 UI，从系统托盘菜单打开。
-深色主题 + 卡片式布局 + 彩色强调色，比传统 ttk 更现代。
+紧凑布局 + 共享主题色；悬浮胶囊通过主应用回调同步深浅配色。
 
 功能：
 - 本地转写模型、AI 润色 API、快捷键、历史记录等常用设置
@@ -153,7 +153,7 @@ def _default_llm_profile(provider="openai_compatible", azure=None):
             "endpoint": azure.get("endpoint", ""),
             "api_key": azure.get("api_key", ""),
             "api_version": "2025-01-01-preview",
-            "model": "gpt-5.4-nano",
+            "model": "gpt-5.4-mini",
         }
     if provider == "anthropic":
         return {

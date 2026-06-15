@@ -32,6 +32,9 @@ The product is local-STT-first. Do not reintroduce online transcription unless t
 - `src/llm_clients.py` - LLM provider adapters and model discovery.
 - `src/settings_window.py` - settings UI.
 - `src/floating_control.py` - draggable on-screen recording button.
+- `src/preview_overlay.py` - result preview capsule.
+- `src/ui_theme.py` - shared semantic theme tokens.
+- `src/tk_runtime.py` - process-level Tk root lifecycle guard.
 - `src/i18n.py` - Chinese/English UI strings.
 - `eval/` and `scripts/eval_polish.py` - local polish/translation evaluation harness.
 - `task_plan.md`, `progress.md`, `findings.md` - project memory across Codex sessions.

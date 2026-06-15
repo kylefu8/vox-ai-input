@@ -8,7 +8,7 @@ AIInputApp 负责协调所有子模块，管理应用的状态机：
 - 主线程: pynput 键盘监听（事件循环）
 - 录音: sounddevice 回调模式（音频线程，不阻塞）
 - 后台处理: 转写 → 润色 → 粘贴（daemon thread）
-- 预览浮窗: 独立 tkinter 线程（queue 通信）
+- 预览浮窗: Windows layered window 优先，Tk fallback 受进程级守卫管理
 - 流式解码: 独立线程（从音频 queue 取 chunk 解码）
 """
 
