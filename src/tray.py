@@ -242,7 +242,7 @@ class TrayIcon:
                 self._handle_settings,
             ),
             pystray.MenuItem(
-                t("历史记录", self._language),
+                t("运行数据", self._language),
                 self._handle_history,
             ),
             pystray.MenuItem(
@@ -368,7 +368,7 @@ class TrayIcon:
                 log.error("打开日志窗口失败: %s", e)
 
     def _handle_history(self, icon, item):
-        """处理用户点击"历史记录"菜单项。"""
+        """处理用户点击"运行数据"菜单项。"""
         if self._on_history:
             try:
                 self._on_history()

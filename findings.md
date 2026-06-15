@@ -97,3 +97,6 @@
 - `scripts/post_build.py` 已脱离当前发布链路：GitHub Actions 直接生成 `VoxAIInput-*-win64.zip`、安装包和 `update-manifest.json`，release 不再发布 `app-update.zip`。旧增量更新逻辑可以留在 `src/updater.py` 做历史兼容，但脚本和构建说明不应继续作为当前步骤出现。
 - 历史 release note 中的旧模型名应保留为历史记录；当前可执行代码、示例和测试里的默认/推荐模型应统一到 `gpt-5.4-mini`，避免新建 profile 时继续带出旧默认。
 - 项目记忆文件本身也会过时：`task_plan.md` 里已经完成的评测/悬浮控制“下一阶段计划”如果不改，会误导后续 session 以为这些仍待执行；完成后应替换为新的后续建议。
+- 设置窗口不应再承担历史浏览/复制/清空：这些是运行数据操作，不是配置项。当前边界是设置页只保留 `history.enabled` 和 `history.max_entries`，托盘“运行数据”窗口负责历史列表、复制、清空和轻量会话状态；后续诊断信息也应优先进入运行数据窗口，而不是塞回设置页。
+- 多显示器坐标不能用 `GetSystemMetrics(0/1)` 当作拖动边界；那只代表主屏幕，会把悬浮胶囊夹回主屏。常驻浮窗应使用 Windows 虚拟桌面矩形（`SM_X/Y/CX/CYVIRTUALSCREEN`），并允许负坐标副屏。Tk 设置/运行数据窗口打开时应按鼠标所在显示器设置 scaling 和居中，否则高分辨率副屏上文字会明显偏小。
+- Win32 layered 悬浮按钮和结果预览胶囊是 Pillow 位图，不会自动跟随 Tk scaling；多屏适配时必须同时缩放渲染位图、窗口尺寸、点击命中区域和 resting position 锚定宽度，否则会出现视觉变大但点击区域/收回位置不一致的问题。

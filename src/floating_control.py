@@ -14,6 +14,7 @@ import math
 from functools import lru_cache
 
 from src.debug_trace import trace_floating_state
+from src.display import display_scale_for_point, get_virtual_screen_rect
 from src.i18n import normalize_ui_language, t
 from src.logger import setup_logger
 from src.tk_runtime import acquire_tk_root, release_tk_root
@@ -41,6 +42,8 @@ _TRANSPARENT = "#010203"
 _RENDER_SCALE = 4
 _ICON_RING_RADIUS = 12.0
 _ICON_RING_WIDTH = 3.0
+_MIN_UI_SCALE = 1.0
+_MAX_UI_SCALE = 2.5
 
 _PALETTES = FLOATING_THEMES
 
@@ -59,10 +62,57 @@ def _control_width(current, hover=False, flash_visible=False):
     return _IDLE_WIDTH
 
 
+def _normalize_ui_scale(scale):
+    try:
+        value = float(scale)
+    except (TypeError, ValueError):
+        return 1.0
+    return min(max(value, _MIN_UI_SCALE), _MAX_UI_SCALE)
+
+
+def _scaled_dim(value, ui_scale=1.0):
+    return max(1, int(round(float(value) * _normalize_ui_scale(ui_scale))))
+
+
+def _scaled_pixel(value, scale):
+    try:
+        return max(1, int(round(float(value) * float(scale))))
+    except (TypeError, ValueError):
+        return max(1, int(round(float(value))))
+
+
+def _control_width_scaled(current, hover=False, flash_visible=False, ui_scale=1.0):
+    return _scaled_dim(_control_width(current, hover, flash_visible), ui_scale)
+
+
+def _control_height_scaled(ui_scale=1.0):
+    return _scaled_dim(_HEIGHT, ui_scale)
+
+
+def _ui_scale_for_point(x=None, y=None):
+    return _normalize_ui_scale(display_scale_for_point(x, y))
+
+
 def _clamp_position_for_screen(x, y, width, screen_width, screen_height, height=_HEIGHT):
     return (
         min(max(0, int(x)), max(0, int(screen_width) - int(width))),
         min(max(0, int(y)), max(0, int(screen_height) - int(height))),
+    )
+
+
+def _clamp_position_for_rect(x, y, width, rect, height=_HEIGHT):
+    left, top, right, bottom = rect
+    return (
+        min(max(int(left), int(x)), max(int(left), int(right) - int(width))),
+        min(max(int(top), int(y)), max(int(top), int(bottom) - int(height))),
+    )
+
+
+def _default_position_for_rect(rect, width, height=_HEIGHT):
+    left, top, right, bottom = rect
+    return (
+        max(int(left), int(right) - int(width) - _MARGIN),
+        max(int(top), int(top) + (int(bottom) - int(top) - int(height)) // 2),
     )
 
 
@@ -81,10 +131,24 @@ def _window_position_from_resting(rest_x, rest_y, width, screen_width, screen_he
     return _clamp_position_for_screen(x, rest_y, width, screen_width, screen_height)
 
 
+def _window_position_from_resting_rect(rest_x, rest_y, width, rect, idle_width=_IDLE_WIDTH, height=_HEIGHT):
+    """Convert the saved idle-button position to current width on a virtual desktop."""
+    if rest_x is None or rest_y is None:
+        return _default_position_for_rect(rect, width, height=height)
+    x = int(rest_x) + int(idle_width) - int(width)
+    return _clamp_position_for_rect(x, rest_y, width, rect, height=height)
+
+
 def _resting_position_from_window(left, top, width, screen_width, screen_height):
     """Convert any expanded window rect back to the saved idle-button position."""
     x = int(left) + int(width) - _IDLE_WIDTH
     return _clamp_position_for_screen(x, top, _IDLE_WIDTH, screen_width, screen_height)
+
+
+def _resting_position_from_window_rect(left, top, width, rect, idle_width=_IDLE_WIDTH, height=_HEIGHT):
+    """Convert expanded rect back to idle-button position on a virtual desktop."""
+    x = int(left) + int(width) - int(idle_width)
+    return _clamp_position_for_rect(x, top, idle_width, rect, height=height)
 
 
 def _rgba(hex_color, alpha=255):
@@ -280,17 +344,21 @@ def _render_control_image(
     bars=None,
     recording_started_at=None,
     now=None,
+    ui_scale=1.0,
 ):
     from PIL import Image, ImageDraw
 
     now = time.monotonic() if now is None else now
     flash_visible = bool(flash_text) and now < flash_until
     width = _control_width(current, hover, flash_visible)
-    scale = _RENDER_SCALE
+    ui_scale = _normalize_ui_scale(ui_scale)
+    scale = _RENDER_SCALE * ui_scale
+    out_width = _scaled_dim(width, ui_scale)
+    out_height = _control_height_scaled(ui_scale)
     p = _PALETTES[_normalize_theme(theme)]
     bars = bars or [0.12] * 9
 
-    img = Image.new("RGBA", (width * scale, _HEIGHT * scale), (0, 0, 0, 0))
+    img = Image.new("RGBA", (_scaled_pixel(width, scale), _scaled_pixel(_HEIGHT, scale)), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img, "RGBA")
     pulse = (math.sin(phase) + 1) / 2
     bg_key = "bg_press" if pressed else ("bg_hover" if hover else "bg")
@@ -314,7 +382,7 @@ def _render_control_image(
         )
         _draw_ring(draw, cx, cy, p["idle"], 174, scale)
         _draw_mic(draw, cx, cy, _rgba(p["icon"], 246), scale)
-        return img.resize((width, _HEIGHT), Image.Resampling.LANCZOS)
+        return img.resize((out_width, out_height), Image.Resampling.LANCZOS)
 
     shadow = (_sc(5, scale), _sc(7, scale), _sc(width - 2, scale), _sc(_HEIGHT - 1, scale))
     body = (_sc(2, scale), _sc(2, scale), _sc(width - 3, scale), _sc(_HEIGHT - 5, scale))
@@ -368,7 +436,7 @@ def _render_control_image(
                 fill=_rgba(p["muted"], 112),
             )
 
-    return img.resize((width, _HEIGHT), Image.Resampling.LANCZOS)
+    return img.resize((out_width, out_height), Image.Resampling.LANCZOS)
 
 
 class FloatingControl:
@@ -411,6 +479,7 @@ class FloatingControl:
         self._window_y = None
         self._window_width = None
         self._window_height = _HEIGHT
+        self._window_scale = 1.0
         self._native_hwnd = None
 
     def get_preview_anchor_rect(self):
@@ -418,28 +487,31 @@ class FloatingControl:
         if not self._enabled:
             return None
 
-        width = int(self._window_width or _control_width(self._state, hover=False, flash_visible=bool(self._message)))
-        height = int(self._window_height or _HEIGHT)
+        ui_scale = _normalize_ui_scale(self._window_scale or _ui_scale_for_point(self._x, self._y))
+        width = int(self._window_width or _control_width_scaled(
+            self._state,
+            hover=False,
+            flash_visible=bool(self._message),
+            ui_scale=ui_scale,
+        ))
+        height = int(self._window_height or _control_height_scaled(ui_scale))
         x = self._window_x
         y = self._window_y
 
         if x is None or y is None:
-            sw, sh = self._screen_size()
-            x, y = _window_position_from_resting(self._x, self._y, width, sw, sh)
+            rect = self._screen_rect()
+            idle_width = _scaled_dim(_IDLE_WIDTH, ui_scale)
+            x, y = _window_position_from_resting_rect(self._x, self._y, width, rect, idle_width, height)
 
         return (int(x), int(y), width, height)
 
     @staticmethod
-    def _screen_size():
+    def _screen_rect():
         if platform.system() == "Windows":
-            try:
-                import ctypes
-
-                user32 = ctypes.windll.user32
-                return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
-            except Exception:
-                pass
-        return 1920, 1080
+            rect = get_virtual_screen_rect()
+            if rect:
+                return rect
+        return (0, 0, 1920, 1080)
 
     def start(self):
         """Start the UI thread when the floating control is enabled."""
@@ -510,13 +582,14 @@ class FloatingControl:
             self._recording_started_at = None
 
         if self._enabled and self._started:
+            previous_idle_width = _scaled_dim(_IDLE_WIDTH, self._window_scale)
             needs_native_idle_reset = (
                 state == STATE_IDLE
                 and platform.system() == "Windows"
                 and self._native_hwnd
                 and (
                     previous_state != STATE_IDLE
-                    or (previous_width is not None and int(previous_width) != _IDLE_WIDTH)
+                    or (previous_width is not None and int(previous_width) != previous_idle_width)
                 )
             )
             if needs_native_idle_reset:
@@ -836,18 +909,37 @@ class FloatingControl:
             "last_level_at": 0.0,
             "bars": [0.12] * 9,
             "window_width": 0,
+            "window_height": _HEIGHT,
+            "ui_scale": 1.0,
             "seq": 0,
             "hwnd": None,
             "running": True,
             "last_trace_tick": 0.0,
         }
 
+        def current_scale():
+            return _normalize_ui_scale(state.get("ui_scale", 1.0))
+
+        def current_height():
+            return _control_height_scaled(current_scale())
+
         def current_width():
-            return _control_width(
+            return _control_width_scaled(
                 state["current"],
                 hover=state["hover"],
                 flash_visible=bool(state["flash_text"]) and time.monotonic() < state["flash_until"],
+                ui_scale=current_scale(),
             )
+
+        def current_idle_width():
+            return _scaled_dim(_IDLE_WIDTH, current_scale())
+
+        def sync_ui_scale(x=None, y=None):
+            if x is None or y is None:
+                if self._x is not None and self._y is not None:
+                    x, y = self._x, self._y
+            state["ui_scale"] = _ui_scale_for_point(x, y)
+            return state["ui_scale"]
 
         def draw_widget():
             return _render_control_image(
@@ -862,25 +954,30 @@ class FloatingControl:
                 phase=state["phase"],
                 bars=state["bars"],
                 recording_started_at=self._recording_started_at,
+                ui_scale=current_scale(),
             )
 
-        def screen_size():
-            return user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+        def screen_rect():
+            return get_virtual_screen_rect() or (0, 0, user32.GetSystemMetrics(0), user32.GetSystemMetrics(1))
 
         def default_position():
-            sw, sh = screen_size()
             width = current_width()
-            return _default_position_for_screen(sw, sh, width)
+            return _default_position_for_rect(screen_rect(), width, height=current_height())
 
         def anchored_position(width=None):
-            sw, sh = screen_size()
             width = current_width() if width is None else width
-            return _window_position_from_resting(self._x, self._y, width, sw, sh)
+            return _window_position_from_resting_rect(
+                self._x,
+                self._y,
+                width,
+                screen_rect(),
+                idle_width=current_idle_width(),
+                height=current_height(),
+            )
 
         def clamp_position(x, y, width=None):
-            sw, sh = screen_size()
             width = current_width() if width is None else width
-            return _clamp_position_for_screen(x, y, width, sw, sh)
+            return _clamp_position_for_rect(x, y, width, screen_rect(), height=current_height())
 
         def get_window_rect():
             rect = wintypes.RECT()
@@ -892,14 +989,21 @@ class FloatingControl:
                 left, top, right, _ = get_window_rect()
                 width = right - left
             width = state["window_width"] or current_width() if width is None else width
-            sw, sh = screen_size()
-            rest_x, rest_y = _resting_position_from_window(left, top, width, sw, sh)
+            rest_x, rest_y = _resting_position_from_window_rect(
+                left,
+                top,
+                width,
+                screen_rect(),
+                idle_width=current_idle_width(),
+                height=current_height(),
+            )
             self._x = int(rest_x)
             self._y = int(rest_y)
             self._window_x = int(rest_x)
             self._window_y = int(rest_y)
-            self._window_width = _IDLE_WIDTH
-            self._window_height = _HEIGHT
+            self._window_width = current_idle_width()
+            self._window_height = current_height()
+            self._window_scale = current_scale()
             return self._x, self._y
 
         def collapse_for_idle(next_state):
@@ -919,16 +1023,21 @@ class FloatingControl:
             if not hwnd:
                 return
 
-            width = current_width()
-            old_width = state["window_width"] or width
             if x is None or y is None:
                 if state["window_width"]:
                     left, top, _, _ = get_window_rect()
                     x, y = left, top
                 elif self._x is None or self._y is None:
+                    sync_ui_scale()
                     x, y = default_position()
                 else:
+                    sync_ui_scale(self._x, self._y)
+                    width = current_width()
                     x, y = anchored_position(width)
+            sync_ui_scale(x, y)
+            width = current_width()
+            height = current_height()
+            old_width = state["window_width"] or width
             if keep_right and old_width != width:
                 x += old_width - width
             x, y = clamp_position(x, y, width)
@@ -946,7 +1055,7 @@ class FloatingControl:
             bmi = BITMAPINFO()
             bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
             bmi.bmiHeader.biWidth = width
-            bmi.bmiHeader.biHeight = -_HEIGHT
+            bmi.bmiHeader.biHeight = -height
             bmi.bmiHeader.biPlanes = 1
             bmi.bmiHeader.biBitCount = 32
             bmi.bmiHeader.biCompression = BI_RGB
@@ -958,7 +1067,7 @@ class FloatingControl:
             ctypes.memmove(bits.value, data, len(data))
             old_obj = gdi32.SelectObject(hdc_mem, hbitmap)
             pt_dst = POINT(x, y)
-            size = SIZE(width, _HEIGHT)
+            size = SIZE(width, height)
             pt_src = POINT(0, 0)
             blend = BLENDFUNCTION(AC_SRC_OVER, 0, 255, AC_SRC_ALPHA)
             ok = user32.UpdateLayeredWindow(hwnd, hdc_screen, ctypes.byref(pt_dst), ctypes.byref(size), hdc_mem, ctypes.byref(pt_src), 0, ctypes.byref(blend), ULW_ALPHA)
@@ -975,15 +1084,19 @@ class FloatingControl:
                     current=state["current"],
                     hover=state["hover"],
                     width=width,
+                    height=height,
+                    scale=current_scale(),
                     x=int(x),
                     y=int(y),
                     hwnd=int(hwnd or 0),
                 )
             state["window_width"] = width
+            state["window_height"] = height
             self._window_x = int(x)
             self._window_y = int(y)
             self._window_width = int(width)
-            self._window_height = _HEIGHT
+            self._window_height = int(height)
+            self._window_scale = current_scale()
 
         def show():
             state["visible"] = True
@@ -1005,7 +1118,12 @@ class FloatingControl:
 
         def is_cancel_hit(x, y):
             width = current_width()
-            return state["current"] == STATE_RECORDING and width - 36 <= x <= width - 8 and 6 <= y <= _HEIGHT - 6
+            height = current_height()
+            return (
+                state["current"] == STATE_RECORDING
+                and width - _scaled_dim(36, current_scale()) <= x <= width - _scaled_dim(8, current_scale())
+                and _scaled_dim(6, current_scale()) <= y <= height - _scaled_dim(6, current_scale())
+            )
 
         def signed_word(value):
             value &= 0xFFFF
@@ -1079,6 +1197,7 @@ class FloatingControl:
                         self._y = payload.get("y")
                         self._theme = _normalize_theme(payload.get("theme"))
                         self._language = normalize_ui_language(payload.get("language"))
+                        sync_ui_scale(self._x, self._y)
                         x, y = anchored_position(current_width())
                         update_layered(x, y, trace_reason="config")
                         if state["visible"]:
@@ -1174,6 +1293,8 @@ class FloatingControl:
                         seq=state["seq"],
                         visible=state["visible"],
                         width=state["window_width"],
+                        height=state["window_height"],
+                        scale=current_scale(),
                         hwnd=int(state["hwnd"] or 0),
                     )
             except Exception as e:
@@ -1199,8 +1320,11 @@ class FloatingControl:
                     dy = sy - state["press_y"]
                     if abs(dx) + abs(dy) > 3:
                         state["dragged"] = True
+                    proposed_x = state["win_x"] + dx
+                    proposed_y = state["win_y"] + dy
+                    sync_ui_scale(proposed_x, proposed_y)
                     width = current_width()
-                    nx, ny = clamp_position(state["win_x"] + dx, state["win_y"] + dy, width)
+                    nx, ny = clamp_position(proposed_x, proposed_y, width)
                     update_layered(nx, ny)
                 cancel_hover = is_cancel_hit(x, y)
                 if cancel_hover != state["cancel_hover"]:
@@ -1277,7 +1401,10 @@ class FloatingControl:
         if not user32.RegisterClassW(ctypes.byref(wc)):
             raise ctypes.WinError()
 
+        sync_ui_scale(self._x, self._y)
         x0, y0 = anchored_position(current_width())
+        w0 = current_width()
+        h0 = current_height()
         hwnd = user32.CreateWindowExW(
             WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
             class_name,
@@ -1285,8 +1412,8 @@ class FloatingControl:
             WS_POPUP,
             x0,
             y0,
-            current_width(),
-            _HEIGHT,
+            w0,
+            h0,
             None,
             None,
             hinstance,
@@ -1372,6 +1499,8 @@ class FloatingControl:
                 "bars": [0.12] * 9,
                 "photo": None,
                 "window_width": 0,
+                "window_height": _HEIGHT,
+                "ui_scale": 1.0,
                 "seq": 0,
             }
 
@@ -1387,12 +1516,29 @@ class FloatingControl:
             canvas.pack(fill="both", expand=True)
             image_id = canvas.create_image(0, 0, anchor="nw")
 
+            def current_scale():
+                return _normalize_ui_scale(state.get("ui_scale", 1.0))
+
+            def current_height():
+                return _control_height_scaled(current_scale())
+
             def current_width():
-                return _control_width(
+                return _control_width_scaled(
                     state["current"],
                     hover=state["hover"],
                     flash_visible=bool(state["flash_text"]) and time.monotonic() < state["flash_until"],
+                    ui_scale=current_scale(),
                 )
+
+            def current_idle_width():
+                return _scaled_dim(_IDLE_WIDTH, current_scale())
+
+            def sync_ui_scale(x=None, y=None):
+                if x is None or y is None:
+                    if self._x is not None and self._y is not None:
+                        x, y = self._x, self._y
+                state["ui_scale"] = _ui_scale_for_point(x, y)
+                return state["ui_scale"]
 
             def draw_widget():
                 return _render_control_image(
@@ -1407,6 +1553,7 @@ class FloatingControl:
                     phase=state["phase"],
                     bars=state["bars"],
                     recording_started_at=self._recording_started_at,
+                    ui_scale=current_scale(),
                 )
 
             def render_state():
@@ -1414,87 +1561,111 @@ class FloatingControl:
                 state["photo"] = ImageTk.PhotoImage(image, master=root)
                 canvas.itemconfigure(image_id, image=state["photo"])
 
+            def tk_screen_rect():
+                try:
+                    left = int(root.winfo_vrootx())
+                    top = int(root.winfo_vrooty())
+                    width = int(root.winfo_vrootwidth())
+                    height = int(root.winfo_vrootheight())
+                    if width > 0 and height > 0:
+                        return (left, top, left + width, top + height)
+                except Exception:
+                    pass
+                return (0, 0, root.winfo_screenwidth(), root.winfo_screenheight())
+
             def default_position():
-                sw = root.winfo_screenwidth()
-                sh = root.winfo_screenheight()
                 width = current_width()
-                return _default_position_for_screen(sw, sh, width)
+                return _default_position_for_rect(tk_screen_rect(), width, height=current_height())
 
             def anchored_position(width=None):
-                sw = root.winfo_screenwidth()
-                sh = root.winfo_screenheight()
                 width = current_width() if width is None else width
-                return _window_position_from_resting(self._x, self._y, width, sw, sh)
+                return _window_position_from_resting_rect(
+                    self._x,
+                    self._y,
+                    width,
+                    tk_screen_rect(),
+                    idle_width=current_idle_width(),
+                    height=current_height(),
+                )
 
             def clamp_position(x, y, width=None):
-                sw = root.winfo_screenwidth()
-                sh = root.winfo_screenheight()
                 width = current_width() if width is None else width
-                return _clamp_position_for_screen(x, y, width, sw, sh)
+                return _clamp_position_for_rect(x, y, width, tk_screen_rect(), height=current_height())
 
             def remember_resting_position(left=None, top=None, width=None):
                 if left is None or top is None:
                     left = root.winfo_x()
                     top = root.winfo_y()
                 width = state["window_width"] or current_width() if width is None else width
-                rest_x, rest_y = _resting_position_from_window(
+                rest_x, rest_y = _resting_position_from_window_rect(
                     left,
                     top,
                     width,
-                    root.winfo_screenwidth(),
-                    root.winfo_screenheight(),
+                    tk_screen_rect(),
+                    idle_width=current_idle_width(),
+                    height=current_height(),
                 )
                 self._x = int(rest_x)
                 self._y = int(rest_y)
                 self._window_x = int(rest_x)
                 self._window_y = int(rest_y)
-                self._window_width = _IDLE_WIDTH
-                self._window_height = _HEIGHT
+                self._window_width = current_idle_width()
+                self._window_height = current_height()
+                self._window_scale = current_scale()
                 return self._x, self._y
 
             def set_geometry(x=None, y=None):
-                width = current_width()
                 if x is None or y is None:
+                    sync_ui_scale()
+                    width = current_width()
                     x0, y0 = anchored_position(width)
                 else:
+                    sync_ui_scale(x, y)
+                    width = current_width()
                     x0, y0 = clamp_position(x, y, width=width)
-                canvas.configure(width=width, height=_HEIGHT)
-                root.geometry(f"{width}x{_HEIGHT}+{x0}+{y0}")
+                height = current_height()
+                canvas.configure(width=width, height=height)
+                root.geometry(f"{width}x{height}+{x0}+{y0}")
                 state["window_width"] = width
+                state["window_height"] = height
                 self._window_x = int(x0)
                 self._window_y = int(y0)
                 self._window_width = int(width)
-                self._window_height = _HEIGHT
+                self._window_height = int(height)
+                self._window_scale = current_scale()
 
             def resize_for_state(keep_right=False):
+                sync_ui_scale(root.winfo_x(), root.winfo_y())
                 width = current_width()
+                height = current_height()
                 old_width = state["window_width"] or width
-                if old_width == width:
-                    canvas.configure(width=width, height=_HEIGHT)
+                old_height = state["window_height"] or height
+                if old_width == width and old_height == height:
+                    canvas.configure(width=width, height=height)
                     self._window_x = int(root.winfo_x())
                     self._window_y = int(root.winfo_y())
                     self._window_width = int(width)
-                    self._window_height = _HEIGHT
+                    self._window_height = int(height)
+                    self._window_scale = current_scale()
                     return
                 x = root.winfo_x()
                 y = root.winfo_y()
                 if keep_right:
                     x += old_width - width
                 x, y = clamp_position(x, y, width=width)
-                canvas.configure(width=width, height=_HEIGHT)
-                root.geometry(f"{width}x{_HEIGHT}+{x}+{y}")
+                canvas.configure(width=width, height=height)
+                root.geometry(f"{width}x{height}+{x}+{y}")
                 state["window_width"] = width
+                state["window_height"] = height
                 self._window_x = int(x)
                 self._window_y = int(y)
                 self._window_width = int(width)
-                self._window_height = _HEIGHT
+                self._window_height = int(height)
+                self._window_scale = current_scale()
 
             def show():
                 state["visible"] = True
-                if self._x is None or self._y is None:
-                    set_geometry()
-                else:
-                    set_geometry(*anchored_position(current_width()))
+                set_geometry()
                 root.deiconify()
                 root.lift()
 
@@ -1522,10 +1693,11 @@ class FloatingControl:
 
             def is_cancel_hit(x, y):
                 width = current_width()
+                height = current_height()
                 return (
                     state["current"] == STATE_RECORDING
-                    and width - 36 <= x <= width - 8
-                    and 6 <= y <= _HEIGHT - 6
+                    and width - _scaled_dim(36, current_scale()) <= x <= width - _scaled_dim(8, current_scale())
+                    and _scaled_dim(6, current_scale()) <= y <= height - _scaled_dim(6, current_scale())
                 )
 
             def on_press(event):
@@ -1543,13 +1715,18 @@ class FloatingControl:
                 dy = event.y_root - state["press_y"]
                 if abs(dx) + abs(dy) > 3:
                     state["dragged"] = True
+                proposed_x = state["win_x"] + dx
+                proposed_y = state["win_y"] + dy
+                sync_ui_scale(proposed_x, proposed_y)
                 width = current_width()
-                x, y = clamp_position(state["win_x"] + dx, state["win_y"] + dy, width=width)
-                root.geometry(f"{width}x{_HEIGHT}+{x}+{y}")
+                height = current_height()
+                x, y = clamp_position(proposed_x, proposed_y, width=width)
+                root.geometry(f"{width}x{height}+{x}+{y}")
                 self._window_x = int(x)
                 self._window_y = int(y)
                 self._window_width = int(width)
-                self._window_height = _HEIGHT
+                self._window_height = int(height)
+                self._window_scale = current_scale()
                 cancel_hover = is_cancel_hit(event.x, event.y)
                 if cancel_hover != state["cancel_hover"]:
                     state["cancel_hover"] = cancel_hover
@@ -1601,7 +1778,7 @@ class FloatingControl:
             canvas.bind("<Leave>", on_leave, add="+")
             canvas.bind("<Button-3>", on_right_click, add="+")
 
-            set_geometry(*anchored_position(current_width()))
+            set_geometry()
             render_state()
 
             def poll_queue():
@@ -1639,7 +1816,7 @@ class FloatingControl:
                             self._y = payload.get("y")
                             self._theme = _normalize_theme(payload.get("theme"))
                             self._language = normalize_ui_language(payload.get("language"))
-                            set_geometry(*anchored_position(current_width()))
+                            set_geometry()
                             render_state()
                             if state["visible"]:
                                 show()
@@ -1686,7 +1863,7 @@ class FloatingControl:
                         state["bars"] = [value * 0.76 for value in state["bars"]]
 
                     if state["visible"]:
-                        if current_width() != state["window_width"]:
+                        if current_width() != state["window_width"] or current_height() != state["window_height"]:
                             resize_for_state(keep_right=True)
                         render_state()
                     root.after(80, tick)

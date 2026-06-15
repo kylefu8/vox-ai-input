@@ -4,6 +4,7 @@ from src.preview_overlay import (
     _position_preview,
     _render_preview_image,
 )
+from src.floating_control import _scaled_dim
 
 
 def _alpha_bbox(image):
@@ -38,6 +39,26 @@ def test_preview_overlay_light_theme_uses_main_ui_palette():
     assert image.size[0] >= 236
     assert image.getchannel("A").getbbox() is not None
     assert image.getchannel("A").getextrema()[1] > 220
+
+
+def test_preview_overlay_render_scales_for_large_monitors():
+    normal = _render_preview_image(
+        text="Preview",
+        status="Done",
+        theme="dark",
+        phase=0,
+    )
+    scaled = _render_preview_image(
+        text="Preview",
+        status="Done",
+        theme="dark",
+        phase=0,
+        ui_scale=1.3,
+    )
+
+    assert scaled.width == _scaled_dim(normal.width, 1.3)
+    assert scaled.height == _scaled_dim(normal.height, 1.3)
+    assert _alpha_bbox(scaled) is not None
 
 
 def test_preview_overlay_positions_below_anchor_when_possible():

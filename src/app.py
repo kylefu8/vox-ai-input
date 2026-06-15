@@ -43,6 +43,7 @@ from src.recorder import check_audio_input
 from src.runtime_components import create_polisher, create_recorder, create_transcriber_runtime
 from src.updater import Updater
 from src.settings_window import open_settings
+from src.runtime_data_window import open_runtime_data_window
 from src.audio_files import cleanup_audio
 from src.tray import TrayIcon, STATE_IDLE, STATE_RECORDING, STATE_PROCESSING
 from src.ui_theme import normalize_ui_theme
@@ -741,11 +742,28 @@ class AIInputApp:
         """打开实时日志窗口（从托盘菜单触发）。"""
         self._log_window.show()
 
-    # ==================== 历史窗口 ====================
+    # ==================== 运行数据窗口 ====================
 
     def _open_history(self):
-        """在主设置窗口中打开历史记录页。"""
-        self._open_settings(initial_page="data", initial_tab="records")
+        """打开运行数据窗口，浏览历史记录和会话状态。"""
+        open_runtime_data_window(
+            current_config=self._config,
+            on_clear_history=self._clear_history,
+            on_get_history_entries=lambda: [
+                entry.to_dict()
+                for entry in self._history_store.list_recent()
+            ],
+            on_get_status=self._runtime_status_info,
+        )
+
+    def _runtime_status_info(self):
+        """Return lightweight runtime status for the data window."""
+        return {
+            "session_api_calls": self._session_api_calls,
+            "last_result_text": self._last_result_text,
+            "last_result_duration": self._last_result_duration,
+            "history_enabled": get_history_config(self._config)["enabled"],
+        }
 
     def _clear_history(self):
         """清空历史记录。"""
@@ -844,11 +862,6 @@ class AIInputApp:
         open_settings(
             current_config=self._config,
             on_save=self._reload_config,
-            on_clear_history=self._clear_history,
-            on_get_history_entries=lambda: [
-                entry.to_dict()
-                for entry in self._history_store.list_recent()
-            ],
             initial_page=initial_page,
             initial_tab=initial_tab,
             on_theme_change=self._apply_runtime_theme,

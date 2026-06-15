@@ -18,6 +18,7 @@ import queue
 import threading
 import time
 
+from src.display import display_scale_for_point
 from src.floating_control import (
     _ICON_RING_RADIUS,
     _ICON_RING_WIDTH,
@@ -27,9 +28,12 @@ from src.floating_control import (
     _draw_ring,
     _load_render_font,
     _normalize_theme,
+    _normalize_ui_scale,
     _rgba,
     _ring_box,
     _sc,
+    _scaled_dim,
+    _scaled_pixel,
 )
 from src.logger import setup_logger
 from src.tk_runtime import acquire_tk_root, release_tk_root
@@ -103,6 +107,14 @@ def _normalize_anchor(anchor):
         return (x, y, width, height)
     except Exception:
         return None
+
+
+def _ui_scale_for_anchor(anchor):
+    anchor = _normalize_anchor(anchor)
+    if anchor:
+        x, y, width, height = anchor
+        return _normalize_ui_scale(display_scale_for_point(x + width / 2, y + height / 2))
+    return _normalize_ui_scale(display_scale_for_point())
 
 
 def _position_preview(size, anchor=None, bounds=None):
@@ -295,17 +307,18 @@ def _draw_status_icon(draw, cx, cy, kind, palette, scale, phase=0.0):
     _draw_mic(draw, cx, cy, _rgba(palette["icon"], 244), scale)
 
 
-def _render_preview_image(*, text="", status="", theme="dark", phase=0.0):
+def _render_preview_image(*, text="", status="", theme="dark", phase=0.0, ui_scale=1.0):
     """离屏渲染结果预览胶囊。"""
     from PIL import Image, ImageDraw
 
-    scale = _RENDER_SCALE
+    ui_scale = _normalize_ui_scale(ui_scale)
+    scale = _RENDER_SCALE * ui_scale
     palette = _PALETTES[_normalize_theme(theme)]
     status_text = _clean_status(status)
     body_text = str(text or "").strip()
     kind = _status_kind(status)
 
-    scratch = Image.new("RGBA", (_MAX_WIDTH * scale, 160 * scale), (0, 0, 0, 0))
+    scratch = Image.new("RGBA", (_scaled_pixel(_MAX_WIDTH, scale), _scaled_pixel(160, scale)), (0, 0, 0, 0))
     draw = ImageDraw.Draw(scratch, "RGBA")
     status_font = _load_render_font(10.5, scale, bold=True)
     body_font = _load_render_font(10.5, scale)
@@ -324,7 +337,9 @@ def _render_preview_image(*, text="", status="", theme="dark", phase=0.0):
         width = max(220, min(_MAX_WIDTH, math.ceil(content_width / scale) + _PADDING_X * 2))
         height = _HEIGHT_STATUS_ONLY
 
-    img = Image.new("RGBA", (width * scale, height * scale), (0, 0, 0, 0))
+    out_width = _scaled_dim(width, ui_scale)
+    out_height = _scaled_dim(height, ui_scale)
+    img = Image.new("RGBA", (_scaled_pixel(width, scale), _scaled_pixel(height, scale)), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img, "RGBA")
     radius = 19 if height <= _HEIGHT_STATUS_ONLY else 20
 
@@ -348,7 +363,7 @@ def _render_preview_image(*, text="", status="", theme="dark", phase=0.0):
             _draw_body_text(draw, _PADDING_X, y, line, body_font, _rgba(palette["text"], 218), scale)
             y += _BODY_LINE_HEIGHT
 
-    return img.resize((width, height), Image.Resampling.LANCZOS)
+    return img.resize((out_width, out_height), Image.Resampling.LANCZOS)
 
 
 class PreviewOverlay:
@@ -595,6 +610,7 @@ class PreviewOverlay:
                 status=state["status"],
                 theme=self._theme,
                 phase=state["phase"],
+                ui_scale=_ui_scale_for_anchor(state["anchor"]),
             )
 
         def update_layered(image, x, y):
@@ -815,6 +831,7 @@ class PreviewOverlay:
                     status=state["status"],
                     theme=self._theme,
                     phase=state["phase"],
+                    ui_scale=_ui_scale_for_anchor(state["anchor"]),
                 )
                 width, height = image.size
                 state["photo"] = ImageTk.PhotoImage(image, master=root)

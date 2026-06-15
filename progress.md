@@ -250,3 +250,20 @@
 - 更新过时但仍有用的文档：`CLAUDE.md` 改为指向 `AGENTS.md` 的当前代理入口说明，`UI_STYLE_GUIDE.md` 改为当前 Tk 设置窗口 + Win32 layered 悬浮胶囊体系，README / README_zh 对齐 Python 3.12、bootstrap 脚本和当前 UI 栈。
 - 对齐当前项目约定：GitHub Actions 构建 Python 从 3.11 改为 3.12；Azure profile fallback 和相关测试中的旧 `gpt-5.4-nano` 改为推荐默认 `gpt-5.4-mini`；`task_plan.md` 移除已完成的旧“下一阶段”计划并改成当前后续建议。
 - 清理验证通过：隐私关键字扫描未命中（排除 `config.yaml`、`data/`、`models/`、`.venv/`）；`.venv\Scripts\python.exe -m compileall -q run.py src tests` 通过；受影响测试 `72 passed in 1.47s`；全量测试 `214 passed in 8.75s`；`git diff --check` 无 whitespace 错误。
+
+## 2026-06-15
+- 按下一阶段建议开始拆分“设置”和“运行数据”：设置窗口不再承载历史浏览/复制/清空，只保留历史保存策略（启用开关与保留条数）。
+- 新增 `src/runtime_data_window.py`，通过进程级 Tk root 守卫打开独立运行数据窗口；窗口显示会话状态、本次会话 API 调用、最近结果和历史记录列表，支持刷新、复制和清空历史。
+- 托盘菜单原“历史记录”入口改为“运行数据”，并由 `AIInputApp._open_history()` 打开新运行数据窗口；设置窗口不再接收历史读取/清空回调。
+- 补充英文 i18n 文案与测试：运行数据、历史保存策略、会话状态、最近输出、复制失败等。
+- 运行数据窗口 smoke test 通过：用真实 `config.yaml` 和历史存储构建窗口，1.2 秒后自动关闭，输出 `runtime data smoke ok`。
+- smoke test 顺手抓到 `i18n.t(..., text=...)` 与函数参数名冲突的问题；已将底层和窗口 wrapper 的源文本参数改名，并补充 `{text}` 占位符回归测试。
+- 验证通过：`.venv\Scripts\python.exe -m compileall -q run.py src tests`；全量测试 `220 passed in 8.77s`；`git diff --check` 无 whitespace 错误。
+- 根据用户反馈多显示器体验问题继续修复：新增 `src/display.py`，读取 Windows 虚拟桌面、鼠标所在显示器工作区和显示器 UI scale。
+- 设置窗口与运行数据窗口创建时会按鼠标所在显示器设置 Tk scaling，并居中到该显示器；当 DPI 返回 1.0 但显示器逻辑分辨率明显高于 1080p 时，会按分辨率做温和放大，避免 32 寸高分屏文字显得过小。
+- 悬浮按钮拖动边界从主屏幕 `GetSystemMetrics(0/1)` 改为完整虚拟桌面矩形，支持拖到左侧/右侧/上方副屏；坐标模型仍保持“空闲小圆 resting position”为唯一持久化来源。
+- 运行数据窗口 smoke：`runtime geometry 760x681+-2970+355` 后自动关闭；设置窗口 smoke：`settings geometry 960x720+-3040+336` 后自动关闭，均确认落在当前副屏。
+- 验证通过：`.venv\Scripts\python.exe -m compileall -q run.py src tests`；全量测试 `221 passed in 8.78s`；`git diff --check` 无 whitespace 错误。
+- 继续补齐多显示器缩放：悬浮按钮和结果预览胶囊不再固定 42px/固定字体渲染，而是按所在显示器的 UI scale 生成位图；窗口宽高、命中区域、右侧锚定、预览锚点和 resting position 反算都使用同一缩放比例，避免 32 寸高分屏上浮窗文字/图标偏小。
+- 验证通过：`.venv\Scripts\python.exe -m compileall -q run.py src tests`；全量测试 `224 passed in 8.64s`；`git diff --check` 无 whitespace 错误。
+- 已重启新版应用：launcher PID `10724`，实际 GUI 子进程 PID `50660`；常驻浮窗仍按已保存位置显示在主屏 `42x42`。独立副屏 smoke 使用坐标 `(-3000, 700)`，显示器 scale `1.289`，悬浮按钮枚举为 `54x54`，结果预览胶囊枚举为 `304x90`，确认跨屏缩放生效且不改本机 `config.yaml`。

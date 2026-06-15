@@ -15,6 +15,7 @@ def test_translation_falls_back_to_source_text():
 
 def test_translation_formats_placeholders():
     assert t("共 {count} 条历史记录", "en", count=3) == "3 history items"
+    assert t("本次会话 API 调用：{count}", "en", count=2) == "API calls this session: 2"
 
 
 def test_polish_tips_are_translated():
@@ -25,6 +26,11 @@ def test_polish_tips_are_translated():
 def test_floating_control_text_is_translated():
     assert t("显示悬浮录音按钮", "en") == "Show floating mic button"
     assert "Alt+Z" in t("Alt+Z 常被显卡覆盖层或录屏工具占用，建议更换。", "en")
+
+
+def test_runtime_data_text_is_translated():
+    assert t("运行数据", "en") == "Runtime Data"
+    assert t("历史保存策略", "en") == "History Retention"
 
 
 def test_language_labels_are_localized():

@@ -116,3 +116,10 @@ def test_saved_theme_preview_does_not_revert_on_close():
         settings_window._set_current_theme(previous)
 
     assert calls == []
+
+
+def test_settings_translation_accepts_text_placeholder():
+    window = SettingsWindow.__new__(SettingsWindow)
+    window._ui_language = "en"
+
+    assert window._t("原文：{text}", text="raw") == "Original: raw"

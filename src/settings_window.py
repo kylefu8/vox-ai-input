@@ -5,7 +5,7 @@
 紧凑布局 + 共享主题色；悬浮胶囊通过主应用回调同步深浅配色。
 
 功能：
-- 本地转写模型、AI 润色 API、快捷键、历史记录等常用设置
+- 本地转写模型、AI 润色 API、快捷键、历史保存策略等常用设置
 - 快捷键（按键捕捉 + 冲突检测）、润色开关、翻译等常用设置
 
 线程说明：
@@ -27,6 +27,7 @@ from src.i18n import (
     normalize_ui_language,
     t,
 )
+from src.display import get_monitor_rect_for_point, tk_scaling_for_current_monitor
 from src.logger import setup_logger
 from src.tk_runtime import exclusive_tk_root
 from src.ui_theme import UI_THEMES, normalize_ui_theme
@@ -216,25 +217,6 @@ _LLM_PROVIDER_OPTIONS = [
     ("OpenAI Responses", "openai_responses"),
     ("Anthropic Messages", "anthropic"),
 ]
-
-
-def _short_text(text, limit=220):
-    text = (text or "").replace("\n", " ").strip()
-    if len(text) <= limit:
-        return text
-    return text[: limit - 3] + "..."
-
-
-def _format_history_time(value):
-    if not value:
-        return "未知时间"
-    try:
-        from datetime import datetime
-
-        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        return dt.astimezone().strftime("%Y-%m-%d %H:%M")
-    except Exception:
-        return str(value)[:16]
 
 
 def _coerce_positive_int(value, default):
@@ -627,10 +609,7 @@ class SettingsWindow:
     def __init__(
         self,
         current_config,
-        status_info=None,
         on_save=None,
-        on_clear_history=None,
-        on_get_history_entries=None,
         initial_page="transcribe",
         initial_tab=None,
         on_theme_change=None,
@@ -638,10 +617,7 @@ class SettingsWindow:
         global _settings_open
         _settings_open = True
         self._config = current_config
-        self._status_info = status_info or {}
         self._on_save = on_save
-        self._on_clear_history = on_clear_history
-        self._on_get_history_entries = on_get_history_entries
         self._initial_page = initial_page or "transcribe"
         self._initial_tab = initial_tab
         self._on_theme_change = on_theme_change
@@ -654,8 +630,8 @@ class SettingsWindow:
         self._llm_profiles = self._build_llm_profiles()
         self._build_ui()
 
-    def _t(self, text, **kwargs):
-        return t(text, self._ui_language, **kwargs)
+    def _t(self, source, **kwargs):
+        return t(source, self._ui_language, **kwargs)
 
     def _make_translate_options(self):
         return [(self._t(label), code) for label, code in _BASE_TRANSLATE_OPTIONS]
@@ -671,6 +647,7 @@ class SettingsWindow:
         self._root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._root.minsize(860, 620)
         self._root.withdraw()
+        self._configure_tk_scaling()
         self._configure_fonts()
         self._configure_ttk_style()
         _prewarm_button_icons(self._root)
@@ -685,6 +662,13 @@ class SettingsWindow:
         self._root.update_idletasks()
         self._center_window()
         self._root.deiconify()
+
+    def _configure_tk_scaling(self):
+        """Scale Tk fonts/widgets for the monitor where the window opens."""
+        try:
+            self._root.tk.call("tk", "scaling", tk_scaling_for_current_monitor())
+        except Exception:
+            pass
 
     def _configure_fonts(self):
         """Use explicit Windows UI fonts so Tk text renders consistently."""
@@ -841,7 +825,6 @@ class SettingsWindow:
         self._settings_tab_frames = {}
         self._settings_tab_buttons = {}
         self._settings_default_tabs = {}
-        self._history_records_loaded = False
 
         def add_page(key, title, subtitle):
             page = tk.Frame(self._settings_scroll_frame, bg=_C["bg"])
@@ -886,7 +869,7 @@ class SettingsWindow:
             ("transcribe", self._t("转写"), self._t("本地模型"), self._t("本地离线转写模型设置")),
             ("polish", self._t("润色"), self._t("AI API"), self._t("润色、翻译和 LLM 配置")),
             ("operation", self._t("操作"), self._t("快捷键"), self._t("触发按键和启动行为")),
-            ("data", self._t("数据"), self._t("历史记录"), self._t("历史浏览与复制")),
+            ("history", self._t("历史"), self._t("保存策略"), self._t("历史记录保存策略")),
         ]
 
         tk.Label(
@@ -918,16 +901,16 @@ class SettingsWindow:
             "polish", self._t("润色"), "")
         operation_page, operation_tabs, operation_body = add_page(
             "operation", self._t("操作"), "")
-        data_page, data_tabs, data_body = add_page(
-            "data", self._t("数据"), "")
+        history_page, history_tabs, history_body = add_page(
+            "history", self._t("历史"), "")
 
         transcribe_model_tab = add_tab("transcribe", transcribe_tabs, transcribe_body, "model", self._t("本地模型"))
         polish_api_tab = add_tab("polish", polish_tabs, polish_body, "api", self._t("连接"))
         operation_shortcut_tab = add_tab("operation", operation_tabs, operation_body, "shortcut", self._t("快捷键"))
-        history_records_tab = add_tab("data", data_tabs, data_body, "records", self._t("历史"))
+        history_policy_tab = add_tab("history", history_tabs, history_body, "policy", self._t("保存策略"))
 
         # 每个主类目只保留一个页面时，隐藏横向 tab，避免重复导航。
-        for tabbar in (transcribe_tabs, polish_tabs, operation_tabs, data_tabs):
+        for tabbar in (transcribe_tabs, polish_tabs, operation_tabs, history_tabs):
             tabbar.pack_forget()
 
         # ---- 转写 ----
@@ -1080,8 +1063,8 @@ class SettingsWindow:
         else:
             self._autostart_var = None
 
-        # ---- 历史 ----
-        self._build_history_records_tab(history_records_tab)
+        # ---- 历史保存策略 ----
+        self._build_history_policy_tab(history_policy_tab)
 
         # ---- 按钮 ----
         bb = tk.Frame(
@@ -1125,8 +1108,6 @@ class SettingsWindow:
         tab_key = self._initial_tab if key == self._initial_page and self._initial_tab else None
         tab_key = tab_key or self._settings_default_tabs.get(key)
         self._select_settings_tab(key, tab_key, reset_scroll=scroll)
-        if key == "data" and tab_key == "records":
-            self._ensure_history_records_loaded()
         self._root.update_idletasks()
 
     def _select_settings_tab(self, page_key, tab_key, reset_scroll=True):
@@ -1612,17 +1593,17 @@ class SettingsWindow:
         if hasattr(self, "_llm_key_toggle_btn"):
             self._llm_key_toggle_btn.config(text=self._t("隐藏") if self._show_llm_key else self._t("显示"))
 
-    # ==================== 历史记录 ====================
+    # ==================== 历史保存策略 ====================
 
-    def _build_history_records_tab(self, parent):
+    def _build_history_policy_tab(self, parent):
         hist = self._config.get("history", {})
 
-        _section_title(parent, self._t("历史记录"))
+        _section_title(parent, self._t("历史保存策略"))
         card = _card(parent)
         card.pack(fill="x", pady=(0, 12))
 
         policy = tk.Frame(card, bg=_C["surface2"], padx=12, pady=10)
-        policy.pack(fill="x", pady=(0, 12))
+        policy.pack(fill="x", pady=(0, 10))
         self._history_enabled_var = tk.BooleanVar(
             master=self._root,
             value=hist.get("enabled", True),
@@ -1646,162 +1627,16 @@ class SettingsWindow:
             policy, text=self._t("条"), bg=_C["surface2"], fg=_C["text2"],
             font=("Segoe UI", 9),
         ).pack(side="left", padx=(6, 0))
-        _icon_btn(
-            policy,
-            "clear",
-            self._clear_history,
-            tooltip=self._t("清空历史"),
-        ).pack(side="right")
-
-        top = tk.Frame(card, bg=_C["surface"])
-        top.pack(fill="x", pady=(0, 10))
-        self._history_summary_var = tk.StringVar(master=self._root, value="")
         tk.Label(
-            top,
-            textvariable=self._history_summary_var,
-            bg=_C["surface"], fg=_C["text2"],
-            font=("Segoe UI", 9), anchor="w",
-        ).pack(side="left", fill="x", expand=True)
-        _icon_btn(
-            top,
-            "refresh",
-            self._refresh_history_records,
-            tooltip=self._t("刷新"),
-        ).pack(side="right")
-
-        self._history_records_frame = tk.Frame(card, bg=_C["surface"])
-        self._history_records_frame.pack(fill="x")
-        self._history_records_loaded = False
-
-    def _get_history_entries(self):
-        if self._on_get_history_entries:
-            return self._on_get_history_entries() or []
-        return self._status_info.get("history_entries", []) or []
-
-    def _refresh_history_records(self):
-        if not hasattr(self, "_history_records_frame"):
-            return
-        for child in self._history_records_frame.winfo_children():
-            child.destroy()
-
-        entries = self._get_history_entries()
-        self._history_records_loaded = True
-        self._history_summary_var.set(self._t("共 {count} 条历史记录", count=len(entries)))
-        if not entries:
-            empty = tk.Frame(
-                self._history_records_frame,
-                bg=_C["surface2"],
-                padx=14,
-                pady=14,
-                highlightthickness=1,
-                highlightbackground=_C["border"],
-            )
-            empty.pack(fill="x", pady=(4, 0))
-            tk.Label(
-                empty,
-                text=self._t("暂无历史记录"),
-                bg=_C["surface2"], fg=_C["text"],
-                font=("Segoe UI Semibold", 10),
-                anchor="w",
-            ).pack(fill="x")
-            tk.Label(
-                empty,
-                text=self._t("完成一次语音输入后，这里会显示最近结果。"),
-                bg=_C["surface2"], fg=_C["text2"], font=("Segoe UI", 9),
-                anchor="w",
-            ).pack(fill="x", pady=(4, 0))
-            return
-
-        for index, entry in enumerate(entries[:50], start=1):
-            row = tk.Frame(
-                self._history_records_frame,
-                bg=_C["surface2"],
-                padx=12,
-                pady=10,
-                highlightthickness=1,
-                highlightbackground=_C["border"],
-            )
-            row.pack(fill="x", pady=(0, 8))
-
-            meta = entry.get("metadata", {}) or {}
-            profile = meta.get("polish_profile") or self._t("未润色")
-            if meta.get("polish_fallback"):
-                profile = f"{profile} · {self._t('润色失败')}"
-            duration = float(entry.get("duration") or 0)
-            created_at = _format_history_time(entry.get("created_at", ""))
-            header = tk.Frame(row, bg=_C["surface2"])
-            header.pack(fill="x")
-            tk.Label(
-                header,
-                text=f"{index:02d}",
-                bg=_C["accent_soft"],
-                fg=_C["accent"],
-                font=("Segoe UI Semibold", 8),
-                padx=7,
-                pady=2,
-            ).pack(side="left", padx=(0, 8))
-            tk.Label(
-                header,
-                text=f"{created_at} · {profile} · {duration:.1f}s",
-                bg=_C["surface2"], fg=_C["text2"], font=("Segoe UI", 9),
-                anchor="w",
-            ).pack(side="left", fill="x", expand=True)
-            _icon_btn(
-                header,
-                "copy",
-                lambda text=entry.get("final_text", ""): self._copy_history_text(text),
-                tooltip=self._t("复制"),
-            ).pack(side="right")
-
-            tk.Label(
-                row,
-                text=_short_text(entry.get("final_text", "")),
-                bg=_C["surface2"], fg=_C["text"], font=("Segoe UI", 10),
-                anchor="w", justify="left", wraplength=620,
-            ).pack(fill="x", pady=(6, 0))
-
-            raw_text = entry.get("raw_text", "")
-            if raw_text and raw_text.strip() != (entry.get("final_text", "") or "").strip():
-                tk.Label(
-                    row,
-                    text=self._t("原文：{text}", text=_short_text(raw_text, 180)),
-                    bg=_C["surface2"], fg=_C["text2"], font=("Segoe UI", 9),
-                    anchor="w", justify="left", wraplength=620,
-                ).pack(fill="x", pady=(6, 0))
-
-    def _ensure_history_records_loaded(self):
-        """Load history rows only when the user opens the history page."""
-        if getattr(self, "_history_records_loaded", False):
-            return
-        if hasattr(self, "_history_records_frame"):
-            self._refresh_history_records()
-
-    def _copy_history_text(self, text):
-        if not text:
-            return
-        try:
-            import pyperclip
-
-            pyperclip.copy(text)
-            self._history_summary_var.set(self._t("已复制到剪贴板"))
-        except Exception as e:
-            self._history_summary_var.set(f"复制失败：{e}")
-
-    def _clear_history(self):
-        if not self._on_clear_history:
-            self._msg("warning", "无法清空", "当前没有可用的历史记录服务。")
-            return
-        try:
-            ok = self._on_clear_history()
-        except Exception as e:
-            self._msg("error", "清空失败", str(e))
-            return
-        if ok:
-            self._refresh_history_records()
-            if hasattr(self, "_history_summary_var"):
-                self._history_summary_var.set(self._t("历史记录已清空"))
-        else:
-            self._msg("error", "清空失败", "无法删除历史记录文件。")
+            card,
+            text=self._t("历史浏览、复制和清空已移到托盘菜单的「运行数据」。"),
+            bg=_C["surface"],
+            fg=_C["text2"],
+            font=("Segoe UI", 9),
+            anchor="w",
+            justify="left",
+            wraplength=620,
+        ).pack(fill="x", padx=2)
 
     def _build_polish_options_card(self, parent):
         """构建默认隐藏的润色高级提示词设置。"""
@@ -2781,6 +2616,14 @@ class SettingsWindow:
     def _center_window(self):
         """首次打开时居中。"""
         self._root.update_idletasks()
+        rect = get_monitor_rect_for_point()
+        if rect:
+            left, top, right, bottom = rect
+            sw, sh = right - left, bottom - top
+            w = min(max(self._root.winfo_reqwidth(), 960), max(860, sw - 80))
+            h = min(max(self._root.winfo_reqheight(), 720), max(620, sh - 100))
+            self._root.geometry(f"{w}x{h}+{left + (sw-w)//2}+{top + (sh-h)//2}")
+            return
         sw, sh = self._root.winfo_screenwidth(), self._root.winfo_screenheight()
         w = min(max(self._root.winfo_reqwidth(), 960), max(860, sw - 80))
         h = min(max(self._root.winfo_reqheight(), 720), max(620, sh - 100))
@@ -2808,10 +2651,7 @@ class SettingsWindow:
 
 def open_settings(
     current_config,
-    status_info=None,
     on_save=None,
-    on_clear_history=None,
-    on_get_history_entries=None,
     initial_page="transcribe",
     initial_tab=None,
     on_theme_change=None,
@@ -2827,10 +2667,7 @@ def open_settings(
             with exclusive_tk_root("settings"):
                 SettingsWindow(
                     current_config=current_config,
-                    status_info=status_info,
                     on_save=on_save,
-                    on_clear_history=on_clear_history,
-                    on_get_history_entries=on_get_history_entries,
                     initial_page=initial_page,
                     initial_tab=initial_tab,
                     on_theme_change=on_theme_change,

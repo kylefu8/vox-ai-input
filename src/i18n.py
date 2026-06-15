@@ -42,6 +42,7 @@ _EN = {
     "处理中": "Working",
     "设置": "Settings",
     "历史记录": "History",
+    "运行数据": "Runtime Data",
     "日志": "Logs",
     "检查更新": "Check for Updates",
     "退出": "Quit",
@@ -56,6 +57,8 @@ _EN = {
     "触发按键和启动行为": "Trigger key and startup behavior",
     "数据": "Data",
     "历史浏览与复制": "Browse and copy recent outputs",
+    "保存策略": "Retention",
+    "历史记录保存策略": "History retention settings",
     "连接": "Connection",
     "历史": "History",
     "选择本地语音识别模型。": "Choose the local speech recognition model.",
@@ -139,11 +142,18 @@ _EN = {
     "「{combo}」是常用系统快捷键，可能冲突。": "\"{combo}\" is a common system shortcut and may conflict.",
     "历史记录": "History",
     "最近的最终输出保存在本机，可快速复制。": "Recent final outputs are stored locally for quick copying.",
+    "历史保存策略": "History Retention",
+    "历史浏览、复制和清空已移到托盘菜单的「运行数据」。": "History browsing, copying, and clearing now live in the tray menu under \"Runtime Data\".",
     "保存历史记录": "Save history",
     "最多保留": "Keep up to",
     "条": "items",
     "清空历史": "Clear",
     "刷新": "Refresh",
+    "会话状态": "Session Status",
+    "最近输出": "Recent Outputs",
+    "本次会话 API 调用：{count}": "API calls this session: {count}",
+    "最近结果：{text}": "Latest result: {text}",
+    "暂无最近结果": "No recent result yet",
     "暂无历史记录": "No history yet",
     "完成一次语音输入后，这里会显示最近结果。": "After one voice input, recent results will appear here.",
     "复制": "Copy",
@@ -151,6 +161,7 @@ _EN = {
     "润色失败": "Polish failed",
     "原文：{text}": "Original: {text}",
     "已复制到剪贴板": "Copied to clipboard",
+    "复制失败": "Copy failed",
     "历史记录已清空": "History cleared",
     "无法清空": "Cannot Clear",
     "当前没有可用的历史记录服务。": "No history service is available.",
@@ -247,10 +258,10 @@ def language_options(display_language=None):
     return [(language_label(code, display_language), code) for code in SUPPORTED_UI_LANGUAGES]
 
 
-def t(text, language=None, **kwargs):
+def t(source, language=None, **kwargs):
     """Translate source Chinese UI text to the selected language."""
     language = normalize_ui_language(language)
-    translated = text if language == DEFAULT_UI_LANGUAGE else _EN.get(text, text)
+    translated = source if language == DEFAULT_UI_LANGUAGE else _EN.get(source, source)
     if kwargs:
         try:
             return translated.format(**kwargs)

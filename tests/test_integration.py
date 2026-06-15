@@ -673,6 +673,27 @@ class TestHotReload:
 
         assert mock_open_settings.call_args.kwargs["on_theme_change"] == app._apply_runtime_theme
 
+    def test_open_history_uses_runtime_data_window(self):
+        """托盘运行数据入口不再复用设置窗口。"""
+        app = _make_app()
+        app._last_result_text = "整理后的文本"
+        app._last_result_duration = 1.5
+        app._session_api_calls = 2
+
+        with patch("src.app.open_runtime_data_window") as mock_open_runtime:
+            app._open_history()
+
+        assert mock_open_runtime.call_count == 1
+        kwargs = mock_open_runtime.call_args.kwargs
+        assert kwargs["current_config"] == app._config
+        assert kwargs["on_clear_history"] == app._clear_history
+        assert kwargs["on_get_status"]() == {
+            "session_api_calls": 2,
+            "last_result_text": "整理后的文本",
+            "last_result_duration": 1.5,
+            "history_enabled": False,
+        }
+
     def test_reload_config_clears_client_cache(self):
         """热重载应该清除旧的 Azure 客户端缓存。"""
         import src.azure_client

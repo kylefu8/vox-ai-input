@@ -8,8 +8,11 @@ from src.floating_control import (
     _PROCESSING_WIDTH,
     FloatingControl,
     _resting_position_from_window,
+    _resting_position_from_window_rect,
     _render_control_image,
+    _scaled_dim,
     _window_position_from_resting,
+    _window_position_from_resting_rect,
 )
 from src.tray import STATE_IDLE, STATE_PROCESSING, STATE_RECORDING
 from src.ui_theme import UI_THEMES
@@ -150,6 +153,20 @@ def test_light_theme_renders_with_visible_idle_icon():
     assert image.getpixel((_IDLE_WIDTH // 2, 8))[:3] != (255, 255, 255)
 
 
+def test_floating_control_render_scales_for_large_monitors():
+    image = _render_control_image(
+        theme="dark",
+        language="zh_CN",
+        current=STATE_IDLE,
+        hover=False,
+        now=time.monotonic(),
+        ui_scale=1.3,
+    )
+
+    assert image.size == (_scaled_dim(_IDLE_WIDTH, 1.3), _scaled_dim(_HEIGHT, 1.3))
+    assert _alpha_bbox(image) is not None
+
+
 def test_position_model_uses_idle_position_as_single_source():
     rest_x, rest_y = 1600, 500
 
@@ -171,3 +188,56 @@ def test_position_model_uses_idle_position_as_single_source():
             screen_height=1080,
         )
         assert (collapsed_x, collapsed_y) == (rest_x, rest_y)
+
+
+def test_position_model_allows_virtual_desktop_coordinates():
+    rect = (-1920, 0, 3840, 2160)
+    rest_x, rest_y = 2600, 900
+
+    expanded_x, expanded_y = _window_position_from_resting_rect(
+        rest_x,
+        rest_y,
+        _ACTIVE_WIDTH,
+        rect,
+    )
+    assert (expanded_x + _ACTIVE_WIDTH, expanded_y) == (rest_x + _IDLE_WIDTH, rest_y)
+
+    collapsed_x, collapsed_y = _resting_position_from_window_rect(
+        expanded_x,
+        expanded_y,
+        _ACTIVE_WIDTH,
+        rect,
+    )
+    assert (collapsed_x, collapsed_y) == (rest_x, rest_y)
+
+    left_x, left_y = _window_position_from_resting_rect(-1800, 200, _IDLE_WIDTH, rect)
+    assert left_x == -1800
+    assert left_y == 200
+
+
+def test_position_model_keeps_scaled_idle_position_as_anchor():
+    rect = (-1920, 0, 3840, 2160)
+    idle_width = _scaled_dim(_IDLE_WIDTH, 1.3)
+    active_width = _scaled_dim(_ACTIVE_WIDTH, 1.3)
+    height = _scaled_dim(_HEIGHT, 1.3)
+    rest_x, rest_y = 2600, 900
+
+    expanded_x, expanded_y = _window_position_from_resting_rect(
+        rest_x,
+        rest_y,
+        active_width,
+        rect,
+        idle_width=idle_width,
+        height=height,
+    )
+    assert (expanded_x + active_width, expanded_y) == (rest_x + idle_width, rest_y)
+
+    collapsed_x, collapsed_y = _resting_position_from_window_rect(
+        expanded_x,
+        expanded_y,
+        active_width,
+        rect,
+        idle_width=idle_width,
+        height=height,
+    )
+    assert (collapsed_x, collapsed_y) == (rest_x, rest_y)
